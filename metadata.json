@@ -1,0 +1,6 @@
+{
+  "name": "Delta Travel & Tour",
+  "description": "Standalone REST API backend service for Delta Travel & Tour providing endpoints for packages, visa rules, partners, gallery, subscribers, inquiries, JWT auth, and interactive Swagger OpenAPI documentation for external frontends.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
