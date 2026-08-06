@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: delta-travel-app
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRY
+        value: 24h
+      - key: EXCHANGE_RATE_API_URL
+        value: https://api.budjet.org/fiat/USD/ETB
+      - key: EXCHANGE_RATE_FALLBACK
+        value: "159.98"
+      - key: UPLOAD_PATH
+        value: ./uploads
+      - key: ALLOWED_ORIGINS
+        value: "https://delta-admin-beta.vercel.app,https://delta-public-website.vercel.app,http://localhost:5173,http://localhost:5174,http://localhost:3000"

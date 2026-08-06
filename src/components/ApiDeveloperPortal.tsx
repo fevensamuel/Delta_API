@@ -16,11 +16,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
-interface ApiDeveloperPortalProps {
-  onOpenAdmin: () => void;
-}
-
-export const ApiDeveloperPortal: React.FC<ApiDeveloperPortalProps> = ({ onOpenAdmin }) => {
+export const ApiDeveloperPortal: React.FC = () => {
   const [healthStatus, setHealthStatus] = useState<any>(null);
   const [selectedEndpoint, setSelectedEndpoint] = useState<string>('GET /api/packages');
   const [testResponse, setTestResponse] = useState<string | null>(null);
@@ -136,14 +132,6 @@ fetch('${currentHost}${path}', {
               <span>Interactive Swagger UI</span>
               <ExternalLink className="w-3.5 h-3.5 ml-1 opacity-70" />
             </a>
-
-            <button
-              onClick={onOpenAdmin}
-              className="px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center space-x-2"
-            >
-              <Lock className="w-4 h-4 text-amber-400" />
-              <span>Backend Admin Portal</span>
-            </button>
           </div>
         </div>
 

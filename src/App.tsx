@@ -1,17 +1,10 @@
-import { FileCode, Lock, Server, ShieldCheck, Sparkles } from 'lucide-react';
+import { FileCode, Server, Sparkles } from 'lucide-react';
 import React, { useState } from 'react';
-import { AdminPanel } from './components/AdminPanel.js';
 import { ApiDeveloperPortal } from './components/ApiDeveloperPortal.js';
-import { Navbar } from './components/Navbar.js';
 import type { Language } from './types.js';
 
 export default function App() {
   const [currentLang, setCurrentLang] = useState<Language>('en');
-  const [activeSection, setActiveSection] = useState<string>('api');
-
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(
-    !!localStorage.getItem('delta_admin_token')
-  );
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -22,10 +15,7 @@ export default function App() {
           <div className="flex items-center justify-between h-16">
             
             {/* Logo */}
-            <div 
-              onClick={() => setActiveSection('api')}
-              className="flex items-center space-x-3 cursor-pointer group"
-            >
+            <div className="flex items-center space-x-3 cursor-pointer group">
               <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center font-bold text-slate-950 text-lg shadow-sm group-hover:scale-105 transition-transform">
                 Δ
               </div>
@@ -41,17 +31,10 @@ export default function App() {
 
             {/* Navigation Tabs */}
             <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setActiveSection('api')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                  activeSection === 'api'
-                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 border border-slate-200'
-                }`}
-              >
+              <div className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 text-slate-950 font-black shadow-sm flex items-center space-x-1.5">
                 <Server className="w-4 h-4" />
                 <span>API Sandbox & Docs</span>
-              </button>
+              </div>
 
               <a
                 href="/api-docs"
@@ -62,18 +45,6 @@ export default function App() {
                 <FileCode className="w-4 h-4 text-amber-600" />
                 <span>Swagger UI</span>
               </a>
-
-              <button
-                onClick={() => setActiveSection('admin')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                  activeSection === 'admin'
-                    ? 'bg-emerald-600 text-white font-black shadow-sm'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 border border-slate-200'
-                }`}
-              >
-                <Lock className="w-4 h-4 text-amber-600" />
-                <span>Backend Admin DB</span>
-              </button>
             </div>
 
           </div>
@@ -82,18 +53,7 @@ export default function App() {
 
       {/* Main Content View */}
       <main>
-        {activeSection === 'admin' ? (
-          <AdminPanel
-            onLogout={() => {
-              setIsAdminLoggedIn(false);
-              setActiveSection('api');
-            }}
-          />
-        ) : (
-          <ApiDeveloperPortal
-            onOpenAdmin={() => setActiveSection('admin')}
-          />
-        )}
+        <ApiDeveloperPortal />
       </main>
 
       {/* Footer */}

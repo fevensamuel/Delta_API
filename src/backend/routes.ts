@@ -87,6 +87,33 @@ apiRouter.get('/exchange-rate', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/admin/exchange-rate
+ * Returns exchange rate for admin UI dashboard (authenticated)
+ */
+apiRouter.get('/admin/exchange-rate', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const rateData = await getExchangeRate();
+    res.json({
+      status: 'success',
+      success: true,
+      data: {
+        rate: rateData.rate,
+        updatedAt: rateData.updatedAt,
+        source: rateData.source,
+        isFallback: rateData.isFallback
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to fetch exchange rate',
+      details: error.message
+    });
+  }
+});
+
+/**
  * POST /api/admin/exchange-rate
  * Admin override for exchange rate
  */
@@ -184,11 +211,12 @@ const handleLogin = async (req: Request, res: Response) => {
 apiRouter.post('/login', handleLogin);
 apiRouter.post('/admin/login', handleLogin);
 apiRouter.post('/auth/login', handleLogin);
+apiRouter.post('/admin/auth/login', handleLogin);
 
 /**
- * GET /api/admin/me
+ * GET /api/admin/me & /api/admin/auth/me
  */
-apiRouter.get('/admin/me', authenticateToken, (req: Request, res: Response) => {
+const handleGetMe = (req: Request, res: Response) => {
   const reqUser = (req as any).user;
   const user = db.adminUsers.find(u => String(u.id) === String(reqUser.id));
 
@@ -211,7 +239,10 @@ apiRouter.get('/admin/me', authenticateToken, (req: Request, res: Response) => {
     data: userData,
     user: userData
   });
-});
+};
+
+apiRouter.get('/admin/me', authenticateToken, handleGetMe);
+apiRouter.get('/admin/auth/me', authenticateToken, handleGetMe);
 
 /* ==========================================================================
    3. PACKAGES ENDPOINTS (USD Stored, ETB Calculated Real-time)
@@ -306,10 +337,10 @@ apiRouter.get('/packages/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/packages/:id/click-whatsapp
+ * POST /api/packages/:id/click-whatsapp & /api/packages/:id/track-click
  * Increment WhatsApp click counter for package
  */
-apiRouter.post('/packages/:id/click-whatsapp', (req: Request, res: Response) => {
+const handlePackageClickWhatsapp = (req: Request, res: Response) => {
   const pkg = db.packages.find(p => String(p.id) === String(req.params.id));
 
   if (!pkg) {
@@ -327,7 +358,10 @@ apiRouter.post('/packages/:id/click-whatsapp', (req: Request, res: Response) => 
       whatsappClicks: pkg.whatsappClicks
     }
   });
-});
+};
+
+apiRouter.post('/packages/:id/click-whatsapp', handlePackageClickWhatsapp);
+apiRouter.post('/packages/:id/track-click', handlePackageClickWhatsapp);
 
 /**
  * GET /api/admin/packages/stats
@@ -781,6 +815,71 @@ apiRouter.delete('/admin/gallery/:id', authenticateToken, (req: Request, res: Re
   });
 });
 
+/**
+ * POST /api/admin/gallery/bulk
+ * Bulk upload or create gallery items
+ */
+apiRouter.post('/admin/gallery/bulk', authenticateToken, upload.any(), (req: Request, res: Response) => {
+  const body = req.body || {};
+  let rawItems = body.items || body.gallery || body.data;
+
+  if (typeof rawItems === 'string') {
+    try {
+      rawItems = JSON.parse(rawItems);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (!Array.isArray(rawItems)) {
+    if (Array.isArray(body)) {
+      rawItems = body;
+    } else {
+      rawItems = [body];
+    }
+  }
+
+  const addedItems: GalleryItem[] = [];
+  const files = (req.files as Express.Multer.File[]) || [];
+
+  for (let i = 0; i < rawItems.length; i++) {
+    const item = rawItems[i] || {};
+    const file = files[i];
+
+    let imageUrl = item.imageUrl || item.image_url || item.image || '/uploads/thumbnails/default-gallery.jpg';
+    if (file) {
+      imageUrl = `/uploads/thumbnails/${file.filename}`;
+    }
+
+    const newItem: GalleryItem = {
+      id: `gal-bulk-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`,
+      type: item.type === 'video' ? 'video' : 'photo',
+      titleEn: item.titleEn || item.title_en || item.title || `Gallery Item ${db.gallery.length + 1}`,
+      titleAr: item.titleAr || item.title_ar || '',
+      imageUrl,
+      videoUrl: item.videoUrl || item.video_url || null,
+      duration: item.duration || null,
+      location: item.location || 'Ethiopia',
+      description: item.description || '',
+      isActive: item.isActive !== undefined ? Boolean(item.isActive) : true,
+      sortOrder: item.sortOrder ? Number(item.sortOrder) : db.gallery.length + 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    db.gallery.unshift(newItem);
+    addedItems.push(newItem);
+  }
+
+  res.status(201).json({
+    status: 'success',
+    success: true,
+    message: 'Bulk upload successful',
+    count: addedItems.length,
+    data: addedItems
+  });
+});
+
 /* ==========================================================================
    5. SUBSCRIBERS ENDPOINTS (Opt-In Status + Bulk Import)
    ========================================================================== */
@@ -821,6 +920,7 @@ const handleSubscribe = (req: Request, res: Response) => {
       status: 'success',
       success: true,
       message: 'Subscription updated successfully',
+      subscriberId: existing.id,
       data: existing
     });
   }
@@ -844,6 +944,7 @@ const handleSubscribe = (req: Request, res: Response) => {
     status: 'success',
     success: true,
     message: 'Subscribed successfully',
+    subscriberId: newSub.id,
     data: newSub
   });
 };
@@ -852,10 +953,10 @@ apiRouter.post('/subscribers', handleSubscribe);
 apiRouter.post('/subscribe', handleSubscribe);
 
 /**
- * POST /api/admin/subscribers/bulk
+ * POST /api/admin/subscribers/bulk & /api/admin/subscribers/bulk-import
  * Bulk Import Subscribers
  */
-apiRouter.post('/admin/subscribers/bulk', authenticateToken, (req: Request, res: Response) => {
+const handleBulkSubscriberImport = (req: Request, res: Response) => {
   const { subscribers, items } = req.body;
   const listToImport = Array.isArray(subscribers) ? subscribers : Array.isArray(items) ? items : [];
 
@@ -904,7 +1005,44 @@ apiRouter.post('/admin/subscribers/bulk', authenticateToken, (req: Request, res:
     count: imported.length,
     data: imported
   });
-});
+};
+
+apiRouter.post('/admin/subscribers/bulk', authenticateToken, handleBulkSubscriberImport);
+apiRouter.post('/admin/subscribers/bulk-import', authenticateToken, handleBulkSubscriberImport);
+
+/**
+ * DELETE & POST /api/admin/subscribers/bulk-delete
+ */
+const handleBulkSubscriberDelete = (req: Request, res: Response) => {
+  const { ids, subscriberIds, phoneNumbers } = req.body;
+  const targetIds = Array.isArray(ids) ? ids : Array.isArray(subscriberIds) ? subscriberIds : [];
+  const targetPhones = Array.isArray(phoneNumbers) ? phoneNumbers : [];
+
+  if (targetIds.length === 0 && targetPhones.length === 0) {
+    return res.status(400).json({
+      status: 'error',
+      success: false,
+      error: 'Provide an array of "ids" or "phoneNumbers" to delete'
+    });
+  }
+
+  const initialCount = db.subscribers.length;
+  db.subscribers = db.subscribers.filter(s => 
+    !targetIds.includes(String(s.id)) && !targetPhones.includes(s.phone)
+  );
+
+  const deletedCount = initialCount - db.subscribers.length;
+
+  res.json({
+    status: 'success',
+    success: true,
+    message: `${deletedCount} subscribers deleted successfully`,
+    deletedCount
+  });
+};
+
+apiRouter.delete('/admin/subscribers/bulk-delete', authenticateToken, handleBulkSubscriberDelete);
+apiRouter.post('/admin/subscribers/bulk-delete', authenticateToken, handleBulkSubscriberDelete);
 
 /* ==========================================================================
    6. INQUIRIES ENDPOINTS (Status: New, Contacted, Resolved)
@@ -1065,16 +1203,19 @@ apiRouter.post('/admin/sms/campaign', authenticateToken, (req: Request, res: Res
 });
 
 /**
- * GET /api/admin/sms/logs
+ * GET /api/admin/sms/logs & /api/admin/sms/campaigns
  */
-apiRouter.get('/admin/sms/logs', authenticateToken, (req: Request, res: Response) => {
+const handleGetSmsLogs = (req: Request, res: Response) => {
   res.json({
     status: 'success',
     success: true,
     count: db.smsLogs.length,
     data: db.smsLogs
   });
-});
+};
+
+apiRouter.get('/admin/sms/logs', authenticateToken, handleGetSmsLogs);
+apiRouter.get('/admin/sms/campaigns', authenticateToken, handleGetSmsLogs);
 
 /* ==========================================================================
    8. ADMIN USERS MANAGEMENT
@@ -1134,6 +1275,58 @@ apiRouter.post('/admin/users', authenticateToken, (req: Request, res: Response) 
       role: newUser.role,
       status: 'Active'
     }
+  });
+});
+
+/**
+ * PUT /api/admin/users/:id
+ * Update role or active status of an admin user
+ */
+apiRouter.put('/admin/users/:id', authenticateToken, (req: Request, res: Response) => {
+  const { role, isActive, status } = req.body;
+  const user = db.adminUsers.find(u => String(u.id) === String(req.params.id));
+
+  if (!user) {
+    return res.status(404).json({ status: 'error', success: false, error: 'User not found' });
+  }
+
+  if (role) user.role = role as AdminRole;
+  if (isActive !== undefined) user.isActive = Boolean(isActive);
+  if (status) user.status = status;
+  user.updatedAt = new Date().toISOString();
+
+  res.json({
+    status: 'success',
+    success: true,
+    message: 'User updated successfully',
+    data: {
+      id: String(user.id),
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      status: user.status || 'Active'
+    }
+  });
+});
+
+/**
+ * DELETE /api/admin/users/:id
+ * Remove an admin user
+ */
+apiRouter.delete('/admin/users/:id', authenticateToken, (req: Request, res: Response) => {
+  const userIndex = db.adminUsers.findIndex(u => String(u.id) === String(req.params.id));
+
+  if (userIndex === -1) {
+    return res.status(404).json({ status: 'error', success: false, error: 'User not found' });
+  }
+
+  db.adminUsers.splice(userIndex, 1);
+
+  res.json({
+    status: 'success',
+    success: true,
+    message: 'User deleted successfully'
   });
 });
 

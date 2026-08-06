@@ -245,6 +245,80 @@ export const openApiSpec = {
         }
       }
     },
+    '/admin/auth/login': {
+      post: {
+        summary: 'Mandatory Admin Auth Login',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  username: { type: 'string', example: 'admin' },
+                  password: { type: 'string', example: 'admin123' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Login successful with JWT token and user info' } }
+      }
+    },
+    '/admin/auth/me': {
+      get: {
+        summary: 'Mandatory Admin Profile (Get current logged in user)',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Current admin user profile' } }
+      }
+    },
+    '/admin/inquiries/{id}': {
+      put: {
+        summary: 'Update inquiry status (accepts { "status": "New"|"Contacted"|"Resolved" } in body)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  status: { type: 'string', enum: ['New', 'Contacted', 'Resolved'], example: 'Contacted' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Updated inquiry status' } }
+      }
+    },
+    '/admin/sms/campaigns': {
+      get: {
+        summary: 'Fetch SMS campaign logs history',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'List of sent SMS logs' } }
+      }
+    },
+    '/admin/subscribers/bulk-import': {
+      post: {
+        summary: 'Bulk import subscribers',
+        security: [{ bearerAuth: [] }],
+        responses: { 201: { description: 'Subscribers imported' } }
+      }
+    },
+    '/admin/subscribers/bulk-delete': {
+      delete: {
+        summary: 'Bulk delete subscribers by IDs or Phone numbers',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Subscribers deleted' } }
+      },
+      post: {
+        summary: 'Bulk delete subscribers (POST alias)',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Subscribers deleted' } }
+      }
+    },
     '/auth/login': {
       post: {
         summary: 'Standardized authentication login alias',
@@ -265,10 +339,41 @@ export const openApiSpec = {
       }
     },
     '/admin/exchange-rate': {
+      get: {
+        summary: 'Get exchange rate for Admin UI dashboard',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Exchange rate details' } }
+      },
       post: {
         summary: 'Admin override USD to ETB exchange rate',
         security: [{ bearerAuth: [] }],
         responses: { 200: { description: 'Exchange rate updated successfully' } }
+      }
+    },
+    '/admin/users': {
+      get: {
+        summary: 'List all admin team members',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'List of admin users' } }
+      },
+      post: {
+        summary: 'Create a new admin user',
+        security: [{ bearerAuth: [] }],
+        responses: { 201: { description: 'Admin user created successfully' } }
+      }
+    },
+    '/admin/users/{id}': {
+      put: {
+        summary: 'Update admin user role, active status, or status',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Admin user updated successfully' } }
+      },
+      delete: {
+        summary: 'Remove an admin user',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Admin user deleted successfully' } }
       }
     },
     '/admin/dashboard/stats': {
