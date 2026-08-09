@@ -3,17 +3,13 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { db } from './db.js';
 import { getExchangeRate, setAdminOverrideRate } from '../services/exchangeRateService.js';
-import { upload } from '../config/multer.js';
+import { upload, galleryUploadFields, bulkUpload, packageUpload, uploadPaths } from '../config/multer.js';
 import type {
   AdminRole,
-  AdminUser,
   GalleryItem,
   GalleryType,
-  Inquiry,
   InquiryStatus,
-  PackageCategory,
-  Subscriber,
-  TravelPackage
+  PackageCategory
 } from '../types.js';
 
 export const apiRouter = Router();
@@ -38,7 +34,6 @@ export const authenticateToken = (req: Request, res: Response, next: express.Nex
   });
 };
 
-// Optional Authentication Middleware
 export const optionalAuthToken = (req: Request, res: Response, next: express.NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -55,14 +50,9 @@ export const optionalAuthToken = (req: Request, res: Response, next: express.Nex
   }
 };
 
-/* ==========================================================================
-   1. REAL-TIME EXCHANGE RATE API
-   ========================================================================== */
-
-/**
- * GET /api/exchange-rate
- * Returns real-time USD to ETB exchange rate
- */
+// ============================================================
+// 1. EXCHANGE RATE
+// ============================================================
 apiRouter.get('/exchange-rate', async (req: Request, res: Response) => {
   try {
     const rateData = await getExchangeRate();
@@ -86,10 +76,6 @@ apiRouter.get('/exchange-rate', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /api/admin/exchange-rate
- * Returns exchange rate for admin UI dashboard (authenticated)
- */
 apiRouter.get('/admin/exchange-rate', authenticateToken, async (req: Request, res: Response) => {
   try {
     const rateData = await getExchangeRate();
@@ -113,10 +99,6 @@ apiRouter.get('/admin/exchange-rate', authenticateToken, async (req: Request, re
   }
 });
 
-/**
- * POST /api/admin/exchange-rate
- * Admin override for exchange rate
- */
 apiRouter.post('/admin/exchange-rate', authenticateToken, (req: Request, res: Response) => {
   const { rate } = req.body;
   if (!rate || isNaN(Number(rate)) || Number(rate) <= 0) {
@@ -137,14 +119,9 @@ apiRouter.post('/admin/exchange-rate', authenticateToken, (req: Request, res: Re
   });
 });
 
-/* ==========================================================================
-   2. AUTHENTICATION ENDPOINTS
-   ========================================================================== */
-
-/**
- * POST /api/admin/login or POST /api/login
- * Standardized Login Response
- */
+// ============================================================
+// 2. AUTHENTICATION
+// ============================================================
 const handleLogin = async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
@@ -157,10 +134,11 @@ const handleLogin = async (req: Request, res: Response) => {
   }
 
   const user = db.adminUsers.find(
-    u => u.username.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()
+    u => u.username.toLowerCase() === username.toLowerCase() ||
+         u.email.toLowerCase() === username.toLowerCase()
   );
 
-  if (!user || !user.isActive) {
+  if (!user) {
     return res.status(401).json({
       status: 'error',
       success: false,
@@ -168,19 +146,23 @@ const handleLogin = async (req: Request, res: Response) => {
     });
   }
 
-  const isPasswordValid = user.passwordHash
-    ? bcrypt.compareSync(password, user.passwordHash)
-    : password === 'admin123';
+  if (!user.isActive) {
+    return res.status(401).json({
+      status: 'error',
+      success: false,
+      error: 'Account is inactive. Contact administrator.'
+    });
+  }
 
+  const isPasswordValid = bcrypt.compareSync(password, user.passwordHash);
   if (!isPasswordValid) {
     return res.status(401).json({
       status: 'error',
       success: false,
-      error: 'Invalid username or password'
+      error: 'Invalid credentials or inactive account'
     });
   }
 
-  // Update last login
   user.lastLogin = new Date().toISOString();
 
   const tokenPayload = {
@@ -190,7 +172,7 @@ const handleLogin = async (req: Request, res: Response) => {
     role: user.role
   };
 
-  const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: (process.env.JWT_EXPIRY || '24h') as any });
+  const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
 
   return res.json({
     status: 'success',
@@ -202,7 +184,7 @@ const handleLogin = async (req: Request, res: Response) => {
       username: user.username,
       email: user.email,
       role: user.role,
-      isActive: user.isActive !== undefined ? user.isActive : true,
+      isActive: user.isActive,
       status: user.status || 'Active'
     }
   });
@@ -213,12 +195,9 @@ apiRouter.post('/admin/login', handleLogin);
 apiRouter.post('/auth/login', handleLogin);
 apiRouter.post('/admin/auth/login', handleLogin);
 
-/**
- * GET /api/admin/me & /api/admin/auth/me
- */
-const handleGetMe = (req: Request, res: Response) => {
+const handleGetMe = async (req: Request, res: Response) => {
   const reqUser = (req as any).user;
-  const user = db.adminUsers.find(u => String(u.id) === String(reqUser.id));
+  const user = db.adminUsers.find(u => u.id === reqUser.id);
 
   if (!user) {
     return res.status(404).json({ status: 'error', success: false, error: 'User not found' });
@@ -229,7 +208,7 @@ const handleGetMe = (req: Request, res: Response) => {
     username: user.username,
     email: user.email,
     role: user.role,
-    isActive: user.isActive !== undefined ? user.isActive : true,
+    isActive: user.isActive,
     status: user.status || 'Active'
   };
 
@@ -244,14 +223,9 @@ const handleGetMe = (req: Request, res: Response) => {
 apiRouter.get('/admin/me', authenticateToken, handleGetMe);
 apiRouter.get('/admin/auth/me', authenticateToken, handleGetMe);
 
-/* ==========================================================================
-   3. PACKAGES ENDPOINTS (USD Stored, ETB Calculated Real-time)
-   ========================================================================== */
-
-/**
- * GET /api/packages
- * List active packages (with real-time ETB prices)
- */
+// ============================================================
+// 3. PACKAGES
+// ============================================================
 apiRouter.get('/packages', optionalAuthToken, async (req: Request, res: Response) => {
   try {
     const rateData = await getExchangeRate();
@@ -295,10 +269,71 @@ apiRouter.get('/packages', optionalAuthToken, async (req: Request, res: Response
   }
 });
 
-/**
- * GET /api/packages/:id
- * Get package details with real-time ETB price
- */
+apiRouter.get('/admin/packages', authenticateToken, (req: Request, res: Response) => {
+  const data = db.packages.map(pkg => ({
+    id: String(pkg.id),
+    titleEn: pkg.titleEn,
+    titleAr: pkg.titleAr,
+    titleAm: pkg.titleAm || '',
+    category: pkg.category,
+    priceUsd: pkg.priceUsd,
+    priceEtb: Math.round(pkg.priceUsd * 159.98),
+    durationDays: pkg.durationDays,
+    departureCity: pkg.departureCity || 'Addis Ababa',
+    inclusions: pkg.inclusions || [],
+    availableDates: pkg.availableDates || [],
+    itinerary: pkg.itinerary || [],
+    imageUrl: pkg.imageUrl,
+    isActive: pkg.isActive,
+    status: pkg.isActive ? 'Active' : 'Archived',
+    whatsappClicks: pkg.whatsappClicks || 0,
+    createdAt: pkg.createdAt,
+    updatedAt: pkg.updatedAt
+  }));
+
+  res.json({
+    status: 'success',
+    success: true,
+    count: data.length,
+    data
+  });
+});
+
+apiRouter.get('/admin/packages/:id', authenticateToken, (req: Request, res: Response) => {
+  const pkg = db.packages.find(p => String(p.id) === String(req.params.id));
+
+  if (!pkg) {
+    return res.status(404).json({ status: 'error', success: false, error: 'Package not found' });
+  }
+
+  const data = {
+    id: String(pkg.id),
+    titleEn: pkg.titleEn,
+    titleAr: pkg.titleAr,
+    titleAm: pkg.titleAm || '',
+    category: pkg.category,
+    priceUsd: pkg.priceUsd,
+    priceEtb: Math.round(pkg.priceUsd * 159.98),
+    durationDays: pkg.durationDays,
+    departureCity: pkg.departureCity || 'Addis Ababa',
+    inclusions: pkg.inclusions || [],
+    availableDates: pkg.availableDates || [],
+    itinerary: pkg.itinerary || [],
+    imageUrl: pkg.imageUrl,
+    isActive: pkg.isActive,
+    status: pkg.isActive ? 'Active' : 'Archived',
+    whatsappClicks: pkg.whatsappClicks || 0,
+    createdAt: pkg.createdAt,
+    updatedAt: pkg.updatedAt
+  };
+
+  res.json({
+    status: 'success',
+    success: true,
+    data
+  });
+});
+
 apiRouter.get('/packages/:id', async (req: Request, res: Response) => {
   const pkg = db.packages.find(p => String(p.id) === String(req.params.id));
 
@@ -336,10 +371,6 @@ apiRouter.get('/packages/:id', async (req: Request, res: Response) => {
   });
 });
 
-/**
- * POST /api/packages/:id/click-whatsapp & /api/packages/:id/track-click
- * Increment WhatsApp click counter for package
- */
 const handlePackageClickWhatsapp = (req: Request, res: Response) => {
   const pkg = db.packages.find(p => String(p.id) === String(req.params.id));
 
@@ -363,9 +394,6 @@ const handlePackageClickWhatsapp = (req: Request, res: Response) => {
 apiRouter.post('/packages/:id/click-whatsapp', handlePackageClickWhatsapp);
 apiRouter.post('/packages/:id/track-click', handlePackageClickWhatsapp);
 
-/**
- * GET /api/admin/packages/stats
- */
 apiRouter.get('/admin/packages/stats', authenticateToken, (req: Request, res: Response) => {
   const stats = db.packages.map(p => ({
     id: String(p.id),
@@ -381,139 +409,199 @@ apiRouter.get('/admin/packages/stats', authenticateToken, (req: Request, res: Re
   });
 });
 
-/**
- * POST /api/admin/packages
- * Create new package (USD price stored in database)
- */
-apiRouter.post('/admin/packages', authenticateToken, (req: Request, res: Response) => {
-  const {
-    titleEn,
-    titleAr,
-    titleAm,
-    category,
-    priceUsd,
-    durationDays,
-    departureCity,
-    inclusions,
-    availableDates,
-    itinerary,
-    imageUrl,
-    isActive
-  } = req.body;
+// CREATE PACKAGE
+const packageUpload = upload.single('packageImage');
 
-  if (!titleEn || !titleAr || !category || priceUsd === undefined || !durationDays || !imageUrl) {
-    return res.status(400).json({
+apiRouter.post('/admin/packages', authenticateToken, packageUpload, (req: Request, res: Response) => {
+  try {
+    const {
+      titleEn,
+      titleAr,
+      titleAm,
+      category,
+      priceUsd,
+      durationDays,
+      departureCity,
+      inclusions,
+      availableDates,
+      itinerary,
+      isActive
+    } = req.body;
+
+    // Parse inclusions, availableDates, itinerary if they are sent as JSON strings
+    const parsedInclusions = typeof inclusions === 'string' ? JSON.parse(inclusions) : inclusions;
+    const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : availableDates;
+    const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : itinerary;
+
+    // Get uploaded file
+    const file = req.file;
+    let imageUrl = '';
+
+    if (file) {
+      imageUrl = `/uploads/packages/${file.filename}`;
+      console.log(`📦 Package image uploaded: ${file.filename} -> ${imageUrl}`);
+    } else if (req.body.imageUrl) {
+      // Fallback: if no file but an imageUrl is provided (e.g., URL or base64), use it
+      imageUrl = req.body.imageUrl;
+    }
+
+    // Validation
+    if (!titleEn || titleEn.trim() === '') {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'English Title is required. Please enter a title for your package.'
+      });
+    }
+
+    if (!category) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Category is required. Please select a package category.'
+      });
+    }
+
+    if (priceUsd === undefined || priceUsd === null || Number(priceUsd) <= 0) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Valid price is required. Please enter a price greater than 0.'
+      });
+    }
+
+    if (!durationDays || Number(durationDays) <= 0) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Duration must be at least 1 day. Please enter a valid number of days.'
+      });
+    }
+
+    if (!imageUrl) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Image is required. Please upload an image for the package.'
+      });
+    }
+
+    const validCategories: PackageCategory[] = ['Economy', 'Standard', 'Premium', 'VIP'];
+    if (!validCategories.includes(category as PackageCategory)) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: `Invalid category. Must be one of: ${validCategories.join(', ')}`
+      });
+    }
+
+    const now = new Date().toISOString();
+    const newPkg = {
+      id: `pkg-${Date.now()}`,
+      titleEn: titleEn.trim(),
+      titleAr: (titleAr || '').trim(),
+      titleAm: (titleAm || '').trim(),
+      category: category as PackageCategory,
+      priceUsd: Number(priceUsd),
+      durationDays: Number(durationDays),
+      departureCity: departureCity || 'Addis Ababa',
+      inclusions: Array.isArray(parsedInclusions) ? parsedInclusions : [],
+      availableDates: Array.isArray(parsedAvailableDates) ? parsedAvailableDates : [],
+      itinerary: Array.isArray(parsedItinerary) ? parsedItinerary : [],
+      imageUrl: imageUrl.trim(),
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+      whatsappClicks: 0,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    db.packages.unshift(newPkg);
+    db.saveToFile();
+
+    res.status(201).json({
+      status: 'success',
+      success: true,
+      message: 'Package created successfully',
+      data: newPkg
+    });
+  } catch (err: any) {
+    console.error('Error creating package:', err);
+    res.status(500).json({
       status: 'error',
       success: false,
-      error: 'Missing required fields (titleEn, titleAr, category, priceUsd, durationDays, imageUrl)'
+      error: 'Something went wrong while creating the package. Please try again.'
     });
   }
-
-  // Ensure category does NOT allow Hajj
-  const validCategories: PackageCategory[] = ['Economy', 'Standard', 'Premium', 'VIP'];
-  if (!validCategories.includes(category as PackageCategory)) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: `Invalid category. Must be one of: ${validCategories.join(', ')}`
-    });
-  }
-
-  const now = new Date().toISOString();
-  const newPkg: TravelPackage = {
-    id: `pkg-${Date.now()}`,
-    titleEn,
-    titleAr,
-    titleAm: titleAm || '',
-    category: category as PackageCategory,
-    priceUsd: Number(priceUsd),
-    durationDays: Number(durationDays),
-    departureCity: departureCity || 'Addis Ababa',
-    inclusions: Array.isArray(inclusions) ? inclusions : [],
-    availableDates: Array.isArray(availableDates) ? availableDates : [],
-    itinerary: Array.isArray(itinerary) ? itinerary : [],
-    imageUrl,
-    isActive: isActive !== undefined ? Boolean(isActive) : true,
-    whatsappClicks: 0,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  db.packages.unshift(newPkg);
-
-  res.status(201).json({
-    status: 'success',
-    success: true,
-    message: 'Package created successfully',
-    data: newPkg
-  });
 });
 
-/**
- * PUT /api/admin/packages/:id
- * Update package
- */
+// UPDATE PACKAGE
 apiRouter.put('/admin/packages/:id', authenticateToken, (req: Request, res: Response) => {
-  const index = db.packages.findIndex(p => String(p.id) === String(req.params.id));
+  try {
+    const index = db.packages.findIndex(p => String(p.id) === String(req.params.id));
 
-  if (index === -1) {
-    return res.status(404).json({ status: 'error', success: false, error: 'Package not found' });
-  }
+    if (index === -1) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Package not found' });
+    }
 
-  const existing = db.packages[index];
-  const {
-    titleEn,
-    titleAr,
-    titleAm,
-    category,
-    priceUsd,
-    durationDays,
-    departureCity,
-    inclusions,
-    availableDates,
-    itinerary,
-    imageUrl,
-    isActive
-  } = req.body;
+    const existing = db.packages[index];
+    const {
+      titleEn,
+      titleAr,
+      titleAm,
+      category,
+      priceUsd,
+      durationDays,
+      departureCity,
+      inclusions,
+      availableDates,
+      itinerary,
+      imageUrl,
+      isActive
+    } = req.body;
 
-  if (category && !['Economy', 'Standard', 'Premium', 'VIP'].includes(category)) {
-    return res.status(400).json({
+    if (category && !['Economy', 'Standard', 'Premium', 'VIP'].includes(category)) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Invalid category. Must be Economy, Standard, Premium, or VIP.'
+      });
+    }
+
+    const updatedPkg = {
+      ...existing,
+      titleEn: titleEn !== undefined ? titleEn : existing.titleEn,
+      titleAr: titleAr !== undefined ? titleAr : existing.titleAr,
+      titleAm: titleAm !== undefined ? titleAm : existing.titleAm,
+      category: category ? (category as PackageCategory) : existing.category,
+      priceUsd: priceUsd !== undefined ? Number(priceUsd) : existing.priceUsd,
+      durationDays: durationDays !== undefined ? Number(durationDays) : existing.durationDays,
+      departureCity: departureCity !== undefined ? departureCity : existing.departureCity,
+      inclusions: inclusions !== undefined ? inclusions : existing.inclusions,
+      availableDates: availableDates !== undefined ? availableDates : existing.availableDates,
+      itinerary: itinerary !== undefined ? itinerary : existing.itinerary,
+      imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
+      isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
+      updatedAt: new Date().toISOString()
+    };
+
+    db.packages[index] = updatedPkg;
+    db.saveToFile();
+
+    res.json({
+      status: 'success',
+      success: true,
+      message: 'Package updated successfully',
+      data: updatedPkg
+    });
+  } catch (err: any) {
+    res.status(500).json({
       status: 'error',
       success: false,
-      error: 'Invalid category. Category Hajj is no longer supported.'
+      error: 'Something went wrong while updating the package. Please try again.'
     });
   }
-
-  const updatedPkg: TravelPackage = {
-    ...existing,
-    titleEn: titleEn !== undefined ? titleEn : existing.titleEn,
-    titleAr: titleAr !== undefined ? titleAr : existing.titleAr,
-    titleAm: titleAm !== undefined ? titleAm : existing.titleAm,
-    category: category ? (category as PackageCategory) : existing.category,
-    priceUsd: priceUsd !== undefined ? Number(priceUsd) : existing.priceUsd,
-    durationDays: durationDays !== undefined ? Number(durationDays) : existing.durationDays,
-    departureCity: departureCity !== undefined ? departureCity : existing.departureCity,
-    inclusions: inclusions !== undefined ? inclusions : existing.inclusions,
-    availableDates: availableDates !== undefined ? availableDates : existing.availableDates,
-    itinerary: itinerary !== undefined ? itinerary : existing.itinerary,
-    imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
-    isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
-    updatedAt: new Date().toISOString()
-  };
-
-  db.packages[index] = updatedPkg;
-
-  res.json({
-    status: 'success',
-    success: true,
-    message: 'Package updated successfully',
-    data: updatedPkg
-  });
 });
 
-/**
- * DELETE /api/admin/packages/:id
- */
 apiRouter.delete('/admin/packages/:id', authenticateToken, (req: Request, res: Response) => {
   const index = db.packages.findIndex(p => String(p.id) === String(req.params.id));
 
@@ -522,6 +610,7 @@ apiRouter.delete('/admin/packages/:id', authenticateToken, (req: Request, res: R
   }
 
   db.packages.splice(index, 1);
+  db.saveToFile();
 
   res.json({
     status: 'success',
@@ -530,14 +619,10 @@ apiRouter.delete('/admin/packages/:id', authenticateToken, (req: Request, res: R
   });
 });
 
-/* ==========================================================================
-   4. GALLERY ENDPOINTS (File Upload Support + Multi-Format + Single GET)
-   ========================================================================== */
+// ============================================================
+// 4. GALLERY - FIXED for correct file serving
+// ============================================================
 
-/**
- * GET /api/gallery
- * Returns active gallery items (Public) or all gallery items (Admin)
- */
 apiRouter.get('/gallery', optionalAuthToken, (req: Request, res: Response) => {
   const isAdmin = Boolean((req as any).user);
   const showAll = req.query.all === 'true' && isAdmin;
@@ -551,7 +636,6 @@ apiRouter.get('/gallery', optionalAuthToken, (req: Request, res: Response) => {
     items = items.filter(g => g.type === typeFilter);
   }
 
-  // Sort by sortOrder ascending
   const sorted = [...items].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
   res.json({
@@ -562,10 +646,6 @@ apiRouter.get('/gallery', optionalAuthToken, (req: Request, res: Response) => {
   });
 });
 
-/**
- * GET /api/gallery/:id
- * Get single gallery item
- */
 apiRouter.get('/gallery/:id', optionalAuthToken, (req: Request, res: Response) => {
   const isAdmin = Boolean((req as any).user);
   const item = db.gallery.find(g => String(g.id) === String(req.params.id));
@@ -581,224 +661,263 @@ apiRouter.get('/gallery/:id', optionalAuthToken, (req: Request, res: Response) =
   });
 });
 
-const galleryUploadFields = upload.fields([
-  { name: 'image', maxCount: 1 },
-  { name: 'thumbnail', maxCount: 1 },
-  { name: 'video', maxCount: 1 }
-]);
-
-/**
- * POST /api/admin/gallery
- * Create gallery item with file upload or JSON payload
- */
+// SINGLE GALLERY UPLOAD
 apiRouter.post('/admin/gallery', authenticateToken, galleryUploadFields, (req: Request, res: Response) => {
-  const body = req.body || {};
-  const type = (body.type === 'video' ? 'video' : 'photo') as GalleryType;
-  const titleEn = body.titleEn || body.title_en || body.title;
-  const titleAr = body.titleAr || body.title_ar || '';
-  const duration = body.duration || '';
-  const location = body.location || 'Makkah Al-Mukarramah';
-  const description = body.description || '';
-  const isActive = body.isActive !== undefined ? (String(body.isActive) === 'true' || body.isActive === true) : true;
-  const sortOrder = body.sortOrder !== undefined ? Number(body.sortOrder) : (body.sort_order !== undefined ? Number(body.sort_order) : 0);
+  try {
+    const body = req.body || {};
+    const type = (body.type === 'video' ? 'video' : 'photo') as GalleryType;
+    const titleEn = body.titleEn || body.title_en || body.title;
+    const titleAr = body.titleAr || body.title_ar || '';
+    const duration = body.duration || '';
+    const location = body.location || 'Makkah Al-Mukarramah';
+    const description = body.description || '';
+    const isActive = body.isActive !== undefined ? (String(body.isActive) === 'true' || body.isActive === true) : true;
+    const sortOrder = body.sortOrder !== undefined ? Number(body.sortOrder) : (body.sort_order !== undefined ? Number(body.sort_order) : 0);
 
-  let imageUrl = body.imageUrl || body.image_url || '';
-  let videoUrl = body.videoUrl || body.video_url || '';
+    let imageUrl = body.imageUrl || body.image_url || '';
+    let videoUrl = body.videoUrl || body.video_url || '';
 
-  if (req.files) {
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    if (files.image && files.image[0]) {
-      imageUrl = `/uploads/thumbnails/${files.image[0].filename}`;
-    } else if (files.thumbnail && files.thumbnail[0]) {
-      imageUrl = `/uploads/thumbnails/${files.thumbnail[0].filename}`;
-    }
-    if (files.video && files.video[0]) {
-      videoUrl = `/uploads/gallery/${files.video[0].filename}`;
-    }
-  }
-
-  if (!titleEn) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: 'titleEn is required'
-    });
-  }
-
-  if (type === 'video' && !videoUrl && !body.videoUrl) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: 'Video file or videoUrl is required for video type'
-    });
-  }
-
-  if (!imageUrl) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: 'Image file, thumbnail, or imageUrl is required'
-    });
-  }
-
-  const now = new Date().toISOString();
-  const newItem: GalleryItem = {
-    id: `gal-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    type,
-    titleEn,
-    titleAr,
-    imageUrl,
-    videoUrl,
-    duration,
-    location,
-    description,
-    isActive,
-    sortOrder,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  db.gallery.unshift(newItem);
-
-  res.status(201).json({
-    status: 'success',
-    success: true,
-    message: 'Gallery item created successfully',
-    data: newItem
-  });
-});
-
-/**
- * POST /api/admin/gallery/bulk
- * Bulk upload gallery items (supports JSON or multipart form-data)
- */
-apiRouter.post('/admin/gallery/bulk', authenticateToken, upload.any(), (req: Request, res: Response) => {
-  let rawItems = req.body.items;
-
-  if (typeof rawItems === 'string') {
-    try {
-      rawItems = JSON.parse(rawItems);
-    } catch (e) {
-      return res.status(400).json({ status: 'error', success: false, error: 'Invalid JSON in items field' });
-    }
-  }
-
-  if (!Array.isArray(rawItems) || rawItems.length === 0) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: 'Request body must contain an "items" array with gallery item definitions'
-    });
-  }
-
-  const files = (req.files as Express.Multer.File[]) || [];
-  const now = new Date().toISOString();
-  const createdItems: GalleryItem[] = [];
-
-  for (let i = 0; i < rawItems.length; i++) {
-    const rawItem = rawItems[i];
-    let imageUrl = rawItem.imageUrl || rawItem.image_url || '';
-    let videoUrl = rawItem.videoUrl || rawItem.video_url || '';
-
-    // If matching uploaded file exists at index i
-    if (files[i]) {
-      if (files[i].mimetype.startsWith('video/')) {
-        videoUrl = `/uploads/gallery/${files[i].filename}`;
-      } else {
-        imageUrl = `/uploads/thumbnails/${files[i].filename}`;
+    // Check if files were uploaded
+    if (req.files) {
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      if (files.image && files.image[0]) {
+        const file = files.image[0];
+        imageUrl = `/uploads/images/${file.filename}`;
+        console.log(`🖼️ Image uploaded: ${file.filename} -> ${imageUrl}`);
+      }
+      if (files.video && files.video[0]) {
+        const file = files.video[0];
+        videoUrl = `/uploads/videos/${file.filename}`;
+        console.log(`🎬 Video uploaded: ${file.filename} -> ${videoUrl}`);
       }
     }
 
-    if (!imageUrl) {
-      imageUrl = 'https://images.unsplash.com/photo-1591604466107-ec97de577aff?auto=format&fit=crop&w=1200&q=80';
+    // Validate title
+    if (!titleEn) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Title (English) is required.'
+      });
     }
 
+    // For photos: imageUrl is required
+    if (type === 'photo' && !imageUrl) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Image file is required for photo type.'
+      });
+    }
+
+    // For videos: videoUrl is required (either from file upload or URL)
+    if (type === 'video' && !videoUrl) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Video file or URL is required for video type.'
+      });
+    }
+
+    const now = new Date().toISOString();
     const newItem: GalleryItem = {
-      id: `gal-bulk-${Date.now()}-${Math.floor(Math.random() * 10000)}-${i}`,
-      type: rawItem.type === 'video' ? 'video' : 'photo',
-      titleEn: rawItem.titleEn || rawItem.title_en || rawItem.title || 'Holy Moment',
-      titleAr: rawItem.titleAr || rawItem.title_ar || '',
-      imageUrl,
-      videoUrl,
-      duration: rawItem.duration || '',
-      location: rawItem.location || 'Makkah Al-Mukarramah',
-      description: rawItem.description || '',
-      isActive: rawItem.isActive !== undefined ? (String(rawItem.isActive) === 'true' || rawItem.isActive === true) : true,
-      sortOrder: rawItem.sortOrder !== undefined ? Number(rawItem.sortOrder) : i,
+      id: `gal-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      type,
+      titleEn,
+      titleAr,
+      imageUrl: imageUrl || '',
+      videoUrl: videoUrl || '',
+      duration,
+      location,
+      description,
+      isActive,
+      sortOrder,
+      uploadDate: now.substring(0, 10),
       createdAt: now,
       updatedAt: now
     };
 
     db.gallery.unshift(newItem);
-    createdItems.push(newItem);
-  }
+    db.saveToFile();
 
-  res.status(201).json({
-    status: 'success',
-    success: true,
-    message: `${createdItems.length} gallery items uploaded successfully`,
-    count: createdItems.length,
-    data: createdItems
-  });
+    console.log(`✅ Gallery item created: ${newItem.titleEn} (${newItem.type})`);
+
+    res.status(201).json({
+      status: 'success',
+      success: true,
+      message: 'Gallery item created successfully',
+      data: newItem
+    });
+  } catch (err: any) {
+    console.error('Error creating gallery item:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to create gallery item.'
+    });
+  }
 });
 
-/**
- * PUT /api/admin/gallery/:id
- * Update gallery item with file upload or JSON payload
- */
+// BULK GALLERY UPLOAD
+apiRouter.post('/admin/gallery/bulk', authenticateToken, bulkUpload, (req: Request, res: Response) => {
+  try {
+    console.log('📤 Bulk upload request received');
+    const files = (req.files as Express.Multer.File[]) || [];
+    console.log(`📁 Files received: ${files.length}`);
+
+    let rawItems = req.body.items;
+    if (typeof rawItems === 'string') {
+      try {
+        rawItems = JSON.parse(rawItems);
+      } catch (e) {
+        return res.status(400).json({ status: 'error', success: false, error: 'Invalid JSON in items field' });
+      }
+    }
+
+    if (!Array.isArray(rawItems) || rawItems.length === 0) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Request body must contain an "items" array with gallery item definitions'
+      });
+    }
+
+    const createdItems: GalleryItem[] = [];
+
+    for (let i = 0; i < rawItems.length; i++) {
+      const rawItem = rawItems[i];
+      let imageUrl = rawItem.imageUrl || rawItem.image_url || '';
+      let videoUrl = rawItem.videoUrl || rawItem.video_url || '';
+
+      if (files[i]) {
+        const file = files[i];
+        if (file.mimetype.startsWith('video/')) {
+          videoUrl = `/uploads/videos/${file.filename}`;
+          imageUrl = '';
+          console.log(`🎬 Video file ${i+1}: ${file.originalname} -> ${videoUrl}`);
+        } else {
+          imageUrl = `/uploads/images/${file.filename}`;
+          console.log(`🖼️ Image file ${i+1}: ${file.originalname} -> ${imageUrl}`);
+        }
+      }
+
+      const isVideo = rawItem.type === 'video' || (files[i] && files[i].mimetype.startsWith('video/'));
+      if (!isVideo && !imageUrl) {
+        console.warn(`⚠️ Skipping item ${i} because no image file or URL provided.`);
+        continue;
+      }
+      if (isVideo && !videoUrl) {
+        console.warn(`⚠️ Skipping item ${i} because no video file or URL provided.`);
+        continue;
+      }
+
+      const now = new Date().toISOString();
+      const newItem: GalleryItem = {
+        id: `gal-bulk-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+        type: isVideo ? 'video' : 'photo',
+        titleEn: rawItem.titleEn || rawItem.title_en || rawItem.title || 'Untitled',
+        titleAr: rawItem.titleAr || rawItem.title_ar || '',
+        imageUrl: imageUrl || '',
+        videoUrl: videoUrl || '',
+        duration: rawItem.duration || '',
+        location: rawItem.location || 'Makkah Al-Mukarramah',
+        description: rawItem.description || '',
+        isActive: rawItem.isActive !== undefined ? Boolean(rawItem.isActive) : true,
+        sortOrder: rawItem.sortOrder !== undefined ? Number(rawItem.sortOrder) : i,
+        uploadDate: now.substring(0, 10),
+        createdAt: now,
+        updatedAt: now
+      };
+
+      db.gallery.unshift(newItem);
+      createdItems.push(newItem);
+    }
+
+    db.saveToFile();
+
+    console.log(`✅ Bulk upload successful: ${createdItems.length} items created`);
+
+    res.status(201).json({
+      status: 'success',
+      success: true,
+      message: `${createdItems.length} gallery items uploaded successfully`,
+      count: createdItems.length,
+      data: createdItems
+    });
+  } catch (err: any) {
+    console.error('❌ Bulk upload error:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to process bulk upload.'
+    });
+  }
+});
+
+// UPDATE GALLERY ITEM
 apiRouter.put('/admin/gallery/:id', authenticateToken, galleryUploadFields, (req: Request, res: Response) => {
-  const index = db.gallery.findIndex(g => String(g.id) === String(req.params.id));
+  try {
+    const index = db.gallery.findIndex(g => String(g.id) === String(req.params.id));
 
-  if (index === -1) {
-    return res.status(404).json({ status: 'error', success: false, error: 'Gallery item not found' });
-  }
-
-  const existing = db.gallery[index];
-  const body = req.body || {};
-
-  let imageUrl = body.imageUrl || body.image_url || existing.imageUrl;
-  let videoUrl = body.videoUrl || body.video_url || existing.videoUrl;
-
-  if (req.files) {
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    if (files.image && files.image[0]) {
-      imageUrl = `/uploads/thumbnails/${files.image[0].filename}`;
-    } else if (files.thumbnail && files.thumbnail[0]) {
-      imageUrl = `/uploads/thumbnails/${files.thumbnail[0].filename}`;
+    if (index === -1) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Gallery item not found' });
     }
-    if (files.video && files.video[0]) {
-      videoUrl = `/uploads/gallery/${files.video[0].filename}`;
+
+    const existing = db.gallery[index];
+    const body = req.body || {};
+
+    let imageUrl = body.imageUrl || body.image_url || existing.imageUrl;
+    let videoUrl = body.videoUrl || body.video_url || existing.videoUrl;
+
+    if (req.files) {
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      if (files.image && files.image[0]) {
+        const file = files.image[0];
+        imageUrl = `/uploads/images/${file.filename}`;
+        console.log(`🖼️ Image updated: ${file.filename} -> ${imageUrl}`);
+      }
+      if (files.video && files.video[0]) {
+        const file = files.video[0];
+        videoUrl = `/uploads/videos/${file.filename}`;
+        console.log(`🎬 Video updated: ${file.filename} -> ${videoUrl}`);
+      }
     }
+
+    const updatedItem: GalleryItem = {
+      ...existing,
+      type: body.type !== undefined ? (body.type === 'video' ? 'video' : 'photo') : existing.type,
+      titleEn: body.titleEn || body.title_en || existing.titleEn,
+      titleAr: body.titleAr !== undefined ? body.titleAr : (body.title_ar !== undefined ? body.title_ar : existing.titleAr),
+      imageUrl: imageUrl || '',
+      videoUrl: videoUrl || '',
+      duration: body.duration !== undefined ? body.duration : existing.duration,
+      location: body.location !== undefined ? body.location : existing.location,
+      description: body.description !== undefined ? body.description : existing.description,
+      isActive: body.isActive !== undefined ? (String(body.isActive) === 'true' || body.isActive === true) : existing.isActive,
+      sortOrder: body.sortOrder !== undefined ? Number(body.sortOrder) : (body.sort_order !== undefined ? Number(body.sort_order) : existing.sortOrder),
+      updatedAt: new Date().toISOString()
+    };
+
+    db.gallery[index] = updatedItem;
+    db.saveToFile();
+
+    res.json({
+      status: 'success',
+      success: true,
+      message: 'Gallery item updated successfully',
+      data: updatedItem
+    });
+  } catch (err: any) {
+    console.error('Update gallery error:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to update gallery item.'
+    });
   }
-
-  const updatedItem: GalleryItem = {
-    ...existing,
-    type: body.type !== undefined ? (body.type === 'video' ? 'video' : 'photo') : existing.type,
-    titleEn: body.titleEn || body.title_en || existing.titleEn,
-    titleAr: body.titleAr !== undefined ? body.titleAr : (body.title_ar !== undefined ? body.title_ar : existing.titleAr),
-    imageUrl,
-    videoUrl,
-    duration: body.duration !== undefined ? body.duration : existing.duration,
-    location: body.location !== undefined ? body.location : existing.location,
-    description: body.description !== undefined ? body.description : existing.description,
-    isActive: body.isActive !== undefined ? (String(body.isActive) === 'true' || body.isActive === true) : existing.isActive,
-    sortOrder: body.sortOrder !== undefined ? Number(body.sortOrder) : (body.sort_order !== undefined ? Number(body.sort_order) : existing.sortOrder),
-    updatedAt: new Date().toISOString()
-  };
-
-  db.gallery[index] = updatedItem;
-
-  res.json({
-    status: 'success',
-    success: true,
-    message: 'Gallery item updated successfully',
-    data: updatedItem
-  });
 });
 
-/**
- * DELETE /api/admin/gallery/:id
- */
+// DELETE GALLERY ITEM
 apiRouter.delete('/admin/gallery/:id', authenticateToken, (req: Request, res: Response) => {
   const index = db.gallery.findIndex(g => String(g.id) === String(req.params.id));
 
@@ -807,6 +926,7 @@ apiRouter.delete('/admin/gallery/:id', authenticateToken, (req: Request, res: Re
   }
 
   db.gallery.splice(index, 1);
+  db.saveToFile();
 
   res.json({
     status: 'success',
@@ -815,78 +935,9 @@ apiRouter.delete('/admin/gallery/:id', authenticateToken, (req: Request, res: Re
   });
 });
 
-/**
- * POST /api/admin/gallery/bulk
- * Bulk upload or create gallery items
- */
-apiRouter.post('/admin/gallery/bulk', authenticateToken, upload.any(), (req: Request, res: Response) => {
-  const body = req.body || {};
-  let rawItems = body.items || body.gallery || body.data;
-
-  if (typeof rawItems === 'string') {
-    try {
-      rawItems = JSON.parse(rawItems);
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  if (!Array.isArray(rawItems)) {
-    if (Array.isArray(body)) {
-      rawItems = body;
-    } else {
-      rawItems = [body];
-    }
-  }
-
-  const addedItems: GalleryItem[] = [];
-  const files = (req.files as Express.Multer.File[]) || [];
-
-  for (let i = 0; i < rawItems.length; i++) {
-    const item = rawItems[i] || {};
-    const file = files[i];
-
-    let imageUrl = item.imageUrl || item.image_url || item.image || '/uploads/thumbnails/default-gallery.jpg';
-    if (file) {
-      imageUrl = `/uploads/thumbnails/${file.filename}`;
-    }
-
-    const newItem: GalleryItem = {
-      id: `gal-bulk-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`,
-      type: item.type === 'video' ? 'video' : 'photo',
-      titleEn: item.titleEn || item.title_en || item.title || `Gallery Item ${db.gallery.length + 1}`,
-      titleAr: item.titleAr || item.title_ar || '',
-      imageUrl,
-      videoUrl: item.videoUrl || item.video_url || null,
-      duration: item.duration || null,
-      location: item.location || 'Ethiopia',
-      description: item.description || '',
-      isActive: item.isActive !== undefined ? Boolean(item.isActive) : true,
-      sortOrder: item.sortOrder ? Number(item.sortOrder) : db.gallery.length + 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    db.gallery.unshift(newItem);
-    addedItems.push(newItem);
-  }
-
-  res.status(201).json({
-    status: 'success',
-    success: true,
-    message: 'Bulk upload successful',
-    count: addedItems.length,
-    data: addedItems
-  });
-});
-
-/* ==========================================================================
-   5. SUBSCRIBERS ENDPOINTS (Opt-In Status + Bulk Import)
-   ========================================================================== */
-
-/**
- * GET /api/admin/subscribers
- */
+// ============================================================
+// 5. SUBSCRIBERS
+// ============================================================
 apiRouter.get('/admin/subscribers', authenticateToken, (req: Request, res: Response) => {
   res.json({
     status: 'success',
@@ -896,9 +947,6 @@ apiRouter.get('/admin/subscribers', authenticateToken, (req: Request, res: Respo
   });
 });
 
-/**
- * POST /api/subscribers or POST /api/subscribe
- */
 const handleSubscribe = (req: Request, res: Response) => {
   const { phone, email, name, channel, packageInterestId } = req.body;
 
@@ -915,6 +963,7 @@ const handleSubscribe = (req: Request, res: Response) => {
     if (channel) existing.channel = channel;
     if (packageInterestId) existing.packageInterestId = packageInterestId;
     existing.updatedAt = new Date().toISOString();
+    db.saveToFile();
 
     return res.json({
       status: 'success',
@@ -926,7 +975,7 @@ const handleSubscribe = (req: Request, res: Response) => {
   }
 
   const now = new Date().toISOString();
-  const newSub: Subscriber = {
+  const newSub = {
     id: `sub-${Date.now()}`,
     phone,
     email: email || '',
@@ -939,6 +988,7 @@ const handleSubscribe = (req: Request, res: Response) => {
   };
 
   db.subscribers.unshift(newSub);
+  db.saveToFile();
 
   res.status(201).json({
     status: 'success',
@@ -952,10 +1002,6 @@ const handleSubscribe = (req: Request, res: Response) => {
 apiRouter.post('/subscribers', handleSubscribe);
 apiRouter.post('/subscribe', handleSubscribe);
 
-/**
- * POST /api/admin/subscribers/bulk & /api/admin/subscribers/bulk-import
- * Bulk Import Subscribers
- */
 const handleBulkSubscriberImport = (req: Request, res: Response) => {
   const { subscribers, items } = req.body;
   const listToImport = Array.isArray(subscribers) ? subscribers : Array.isArray(items) ? items : [];
@@ -968,35 +1014,37 @@ const handleBulkSubscriberImport = (req: Request, res: Response) => {
     });
   }
 
-  const now = new Date().toISOString();
-  const imported: Subscriber[] = [];
+  const imported: any[] = [];
 
   for (const item of listToImport) {
     if (!item.phone) continue;
 
-    const existingIndex = db.subscribers.findIndex(s => s.phone === item.phone);
-    if (existingIndex !== -1) {
-      db.subscribers[existingIndex].optInStatus = item.optInStatus !== undefined ? Boolean(item.optInStatus) : true;
-      if (item.email) db.subscribers[existingIndex].email = item.email;
-      if (item.name) db.subscribers[existingIndex].name = item.name;
-      db.subscribers[existingIndex].updatedAt = now;
-      imported.push(db.subscribers[existingIndex]);
+    const existing = db.subscribers.find(s => s.phone === item.phone);
+
+    if (existing) {
+      existing.optInStatus = item.optInStatus !== undefined ? Boolean(item.optInStatus) : true;
+      if (item.email) existing.email = item.email;
+      if (item.name) existing.name = item.name;
+      existing.updatedAt = new Date().toISOString();
+      imported.push(existing);
     } else {
-      const newSub: Subscriber = {
-        id: `sub-bulk-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      const newSub = {
+        id: `sub-bulk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         phone: item.phone,
         email: item.email || '',
         name: item.name || '',
         channel: item.channel || 'Bulk Import',
         packageInterestId: item.packageInterestId || null,
         optInStatus: item.optInStatus !== undefined ? Boolean(item.optInStatus) : true,
-        createdAt: now,
-        updatedAt: now
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
       db.subscribers.unshift(newSub);
       imported.push(newSub);
     }
   }
+
+  db.saveToFile();
 
   res.status(201).json({
     status: 'success',
@@ -1010,9 +1058,6 @@ const handleBulkSubscriberImport = (req: Request, res: Response) => {
 apiRouter.post('/admin/subscribers/bulk', authenticateToken, handleBulkSubscriberImport);
 apiRouter.post('/admin/subscribers/bulk-import', authenticateToken, handleBulkSubscriberImport);
 
-/**
- * DELETE & POST /api/admin/subscribers/bulk-delete
- */
 const handleBulkSubscriberDelete = (req: Request, res: Response) => {
   const { ids, subscriberIds, phoneNumbers } = req.body;
   const targetIds = Array.isArray(ids) ? ids : Array.isArray(subscriberIds) ? subscriberIds : [];
@@ -1027,11 +1072,16 @@ const handleBulkSubscriberDelete = (req: Request, res: Response) => {
   }
 
   const initialCount = db.subscribers.length;
-  db.subscribers = db.subscribers.filter(s => 
-    !targetIds.includes(String(s.id)) && !targetPhones.includes(s.phone)
-  );
+
+  if (targetIds.length > 0) {
+    db.subscribers = db.subscribers.filter(s => !targetIds.includes(s.id));
+  }
+  if (targetPhones.length > 0) {
+    db.subscribers = db.subscribers.filter(s => !targetPhones.includes(s.phone));
+  }
 
   const deletedCount = initialCount - db.subscribers.length;
+  db.saveToFile();
 
   res.json({
     status: 'success',
@@ -1044,13 +1094,9 @@ const handleBulkSubscriberDelete = (req: Request, res: Response) => {
 apiRouter.delete('/admin/subscribers/bulk-delete', authenticateToken, handleBulkSubscriberDelete);
 apiRouter.post('/admin/subscribers/bulk-delete', authenticateToken, handleBulkSubscriberDelete);
 
-/* ==========================================================================
-   6. INQUIRIES ENDPOINTS (Status: New, Contacted, Resolved)
-   ========================================================================== */
-
-/**
- * GET /api/admin/inquiries
- */
+// ============================================================
+// 6. INQUIRIES
+// ============================================================
 apiRouter.get('/admin/inquiries', authenticateToken, (req: Request, res: Response) => {
   res.json({
     status: 'success',
@@ -1060,9 +1106,6 @@ apiRouter.get('/admin/inquiries', authenticateToken, (req: Request, res: Respons
   });
 });
 
-/**
- * POST /api/inquiries
- */
 apiRouter.post('/inquiries', (req: Request, res: Response) => {
   const { fullName, phone, email, subject, message, source } = req.body;
 
@@ -1075,7 +1118,7 @@ apiRouter.post('/inquiries', (req: Request, res: Response) => {
   }
 
   const now = new Date().toISOString();
-  const newInquiry: Inquiry = {
+  const newInquiry = {
     id: `inq-${Date.now()}`,
     fullName,
     phone,
@@ -1089,6 +1132,7 @@ apiRouter.post('/inquiries', (req: Request, res: Response) => {
   };
 
   db.inquiries.unshift(newInquiry);
+  db.saveToFile();
 
   res.status(201).json({
     status: 'success',
@@ -1098,9 +1142,6 @@ apiRouter.post('/inquiries', (req: Request, res: Response) => {
   });
 });
 
-/**
- * PUT /api/admin/inquiries/:id/status
- */
 const handleUpdateInquiryStatus = (req: Request, res: Response) => {
   const inquiry = db.inquiries.find(i => String(i.id) === String(req.params.id));
 
@@ -1121,6 +1162,7 @@ const handleUpdateInquiryStatus = (req: Request, res: Response) => {
 
   inquiry.status = status as InquiryStatus;
   inquiry.updatedAt = new Date().toISOString();
+  db.saveToFile();
 
   res.json({
     status: 'success',
@@ -1133,14 +1175,9 @@ const handleUpdateInquiryStatus = (req: Request, res: Response) => {
 apiRouter.put('/admin/inquiries/:id/status', authenticateToken, handleUpdateInquiryStatus);
 apiRouter.put('/admin/inquiries/:id', authenticateToken, handleUpdateInquiryStatus);
 
-/* ==========================================================================
-   7. SMS CAMPAIGN ENDPOINT (Filtering)
-   ========================================================================== */
-
-/**
- * POST /api/admin/sms/campaign
- * Recipient Selection Filters: message, channelFilter, packageInterestId, sendToAll
- */
+// ============================================================
+// 7. SMS CAMPAIGNS
+// ============================================================
 apiRouter.post('/admin/sms/campaign', authenticateToken, (req: Request, res: Response) => {
   const { message, recipientFilter, channelFilter, packageInterestId, sendToAll } = req.body;
 
@@ -1148,7 +1185,6 @@ apiRouter.post('/admin/sms/campaign', authenticateToken, (req: Request, res: Res
     return res.status(400).json({ status: 'error', success: false, error: 'Message content is required' });
   }
 
-  // Filter subscribers who have optInStatus === true
   let recipients = db.subscribers.filter(s => s.optInStatus);
 
   if (recipientFilter && typeof recipientFilter === 'string') {
@@ -1169,12 +1205,8 @@ apiRouter.post('/admin/sms/campaign', authenticateToken, (req: Request, res: Res
   }
 
   const recipientsCount = recipients.length;
-  const sentCount = recipientsCount;
-  const failedCount = 0;
   const campaignId = `camp_${Date.now()}`;
 
-  // Log SMS
-  const now = new Date().toISOString();
   recipients.forEach((rec, idx) => {
     db.smsLogs.unshift({
       id: `sms-${Date.now()}-${idx}`,
@@ -1182,9 +1214,11 @@ apiRouter.post('/admin/sms/campaign', authenticateToken, (req: Request, res: Res
       message,
       status: 'Delivered',
       campaignName: campaignId,
-      sentAt: now
+      sentAt: new Date().toISOString()
     });
   });
+
+  db.saveToFile();
 
   res.json({
     status: 'success',
@@ -1193,18 +1227,15 @@ apiRouter.post('/admin/sms/campaign', authenticateToken, (req: Request, res: Res
     data: {
       recipientsCount,
       recipients: recipientsCount,
-      sentCount,
-      failedCount,
+      sentCount: recipientsCount,
+      failedCount: 0,
       campaignId,
-      sentAt: now,
+      sentAt: new Date().toISOString(),
       status: 'Delivered'
     }
   });
 });
 
-/**
- * GET /api/admin/sms/logs & /api/admin/sms/campaigns
- */
 const handleGetSmsLogs = (req: Request, res: Response) => {
   res.json({
     status: 'success',
@@ -1217,11 +1248,28 @@ const handleGetSmsLogs = (req: Request, res: Response) => {
 apiRouter.get('/admin/sms/logs', authenticateToken, handleGetSmsLogs);
 apiRouter.get('/admin/sms/campaigns', authenticateToken, handleGetSmsLogs);
 
-/* ==========================================================================
-   8. ADMIN USERS MANAGEMENT
-   ========================================================================== */
 
+// ============================================================
+// 8. ADMIN USERS MANAGEMENT (FULL CRUD)
+// ============================================================
+
+/**
+ * GET /api/admin/users
+ * List all admin users (SuperAdmin only)
+ */
 apiRouter.get('/admin/users', authenticateToken, (req: Request, res: Response) => {
+  // Check if user is SuperAdmin
+  const reqUser = (req as any).user;
+  const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
+  
+  if (!currentUser || currentUser.role !== 'SuperAdmin') {
+    return res.status(403).json({
+      status: 'error',
+      success: false,
+      error: 'Access denied. SuperAdmin role required.'
+    });
+  }
+
   const users = db.adminUsers.map(u => ({
     id: String(u.id),
     username: u.username,
@@ -1233,111 +1281,287 @@ apiRouter.get('/admin/users', authenticateToken, (req: Request, res: Response) =
     createdAt: u.createdAt
   }));
 
-  res.json({ status: 'success', success: true, count: users.length, data: users });
-});
-
-apiRouter.post('/admin/users', authenticateToken, (req: Request, res: Response) => {
-  const { username, email, password, role } = req.body;
-
-  if (!username || !email || !password || !role) {
-    return res.status(400).json({ status: 'error', success: false, error: 'Missing required fields' });
-  }
-
-  const existing = db.adminUsers.find(u => u.username === username || u.email === email);
-  if (existing) {
-    return res.status(400).json({ status: 'error', success: false, error: 'User already exists' });
-  }
-
-  const now = new Date().toISOString();
-  const newUser: AdminUser = {
-    id: `usr-${Date.now()}`,
-    username,
-    email,
-    passwordHash: bcrypt.hashSync(password, 10),
-    role: role as AdminRole,
-    lastLogin: null,
-    isActive: true,
-    status: 'Active',
-    createdAt: now,
-    updatedAt: now
-  };
-
-  db.adminUsers.push(newUser);
-
-  res.status(201).json({
+  res.json({
     status: 'success',
     success: true,
-    message: 'Admin user created successfully',
-    data: {
-      id: String(newUser.id),
-      username: newUser.username,
-      email: newUser.email,
-      role: newUser.role,
-      status: 'Active'
-    }
+    count: users.length,
+    data: users
   });
+});
+
+/**
+ * POST /api/admin/users
+ * Create a new admin user (SuperAdmin only)
+ */
+// POST /api/admin/users - Create new admin user
+apiRouter.post('/admin/users', authenticateToken, (req: Request, res: Response) => {
+  try {
+    // Check if user is SuperAdmin
+    const reqUser = (req as any).user;
+    const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
+    
+    if (!currentUser || currentUser.role !== 'SuperAdmin') {
+      return res.status(403).json({
+        status: 'error',
+        success: false,
+        error: 'Access denied. SuperAdmin role required.'
+      });
+    }
+
+    const { username, email, password, role, status } = req.body;
+
+    // Log received data (without password for security)
+    console.log('📤 Creating user with:', { 
+      username, 
+      email, 
+      role, 
+      status,
+      hasPassword: !!password 
+    });
+
+    // Validate required fields
+    if (!username || !email || !password || !role) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Missing required fields: username, email, password, and role are required'
+      });
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Check if user already exists
+    const existing = db.adminUsers.find(u => 
+      u.username.toLowerCase() === username.toLowerCase() || 
+      u.email.toLowerCase() === email.toLowerCase()
+    );
+    
+    if (existing) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'User with this username or email already exists'
+      });
+    }
+
+    // Create new user with hashed password
+    const now = new Date().toISOString();
+    const newUser = {
+      id: `usr-${Date.now()}`,
+      username: username.trim(),
+      email: email.trim().toLowerCase(),
+      passwordHash: bcrypt.hashSync(password, 10),
+      role: role as AdminRole,
+      lastLogin: null,
+      isActive: status !== 'Inactive',
+      status: status || 'Active',
+      createdAt: now,
+      updatedAt: now
+    };
+
+    db.adminUsers.push(newUser);
+    db.saveToFile();
+
+    console.log(`✅ New admin user created: ${newUser.username} (${newUser.role})`);
+
+    res.status(201).json({
+      status: 'success',
+      success: true,
+      message: 'Admin user created successfully',
+      data: {
+        id: String(newUser.id),
+        username: newUser.username,
+        email: newUser.email,
+        role: newUser.role,
+        isActive: newUser.isActive,
+        status: newUser.status || 'Active',
+        createdAt: newUser.createdAt
+      }
+    });
+  } catch (err: any) {
+    console.error('❌ Error creating admin user:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to create admin user'
+    });
+  }
 });
 
 /**
  * PUT /api/admin/users/:id
- * Update role or active status of an admin user
+ * Update an admin user (SuperAdmin only)
  */
 apiRouter.put('/admin/users/:id', authenticateToken, (req: Request, res: Response) => {
-  const { role, isActive, status } = req.body;
-  const user = db.adminUsers.find(u => String(u.id) === String(req.params.id));
-
-  if (!user) {
-    return res.status(404).json({ status: 'error', success: false, error: 'User not found' });
-  }
-
-  if (role) user.role = role as AdminRole;
-  if (isActive !== undefined) user.isActive = Boolean(isActive);
-  if (status) user.status = status;
-  user.updatedAt = new Date().toISOString();
-
-  res.json({
-    status: 'success',
-    success: true,
-    message: 'User updated successfully',
-    data: {
-      id: String(user.id),
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      isActive: user.isActive,
-      status: user.status || 'Active'
+  try {
+    // Check if user is SuperAdmin
+    const reqUser = (req as any).user;
+    const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
+    
+    if (!currentUser || currentUser.role !== 'SuperAdmin') {
+      return res.status(403).json({
+        status: 'error',
+        success: false,
+        error: 'Access denied. SuperAdmin role required.'
+      });
     }
-  });
+
+    const { username, email, password, role, status } = req.body;
+    const userIndex = db.adminUsers.findIndex(u => String(u.id) === String(req.params.id));
+
+    if (userIndex === -1) {
+      return res.status(404).json({
+        status: 'error',
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const user = db.adminUsers[userIndex];
+
+    // Prevent editing the last SuperAdmin's role
+    if (user.role === 'SuperAdmin' && role && role !== 'SuperAdmin') {
+      const superAdmins = db.adminUsers.filter(u => u.role === 'SuperAdmin');
+      if (superAdmins.length <= 1) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          error: 'Cannot change the role of the last SuperAdmin user'
+        });
+      }
+    }
+
+    // Update fields
+    if (username) user.username = username.trim();
+    if (email) user.email = email.trim().toLowerCase();
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          error: 'Password must be at least 6 characters long'
+        });
+      }
+      user.passwordHash = bcrypt.hashSync(password, 10);
+    }
+    if (role) user.role = role as AdminRole;
+    if (status !== undefined) {
+      user.status = status;
+      user.isActive = status === 'Active';
+    }
+    user.updatedAt = new Date().toISOString();
+
+    db.saveToFile();
+
+    console.log(`✅ Admin user updated: ${user.username}`);
+
+    res.json({
+      status: 'success',
+      success: true,
+      message: 'User updated successfully',
+      data: {
+        id: String(user.id),
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        status: user.status || 'Active',
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (err: any) {
+    console.error('❌ Error updating admin user:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to update admin user'
+    });
+  }
 });
 
 /**
  * DELETE /api/admin/users/:id
- * Remove an admin user
+ * Delete an admin user (SuperAdmin only)
  */
 apiRouter.delete('/admin/users/:id', authenticateToken, (req: Request, res: Response) => {
-  const userIndex = db.adminUsers.findIndex(u => String(u.id) === String(req.params.id));
+  try {
+    // Check if user is SuperAdmin
+    const reqUser = (req as any).user;
+    const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
+    
+    if (!currentUser || currentUser.role !== 'SuperAdmin') {
+      return res.status(403).json({
+        status: 'error',
+        success: false,
+        error: 'Access denied. SuperAdmin role required.'
+      });
+    }
 
-  if (userIndex === -1) {
-    return res.status(404).json({ status: 'error', success: false, error: 'User not found' });
+    const userIndex = db.adminUsers.findIndex(u => String(u.id) === String(req.params.id));
+
+    if (userIndex === -1) {
+      return res.status(404).json({
+        status: 'error',
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const user = db.adminUsers[userIndex];
+
+    // Prevent deleting the last SuperAdmin
+    if (user.role === 'SuperAdmin') {
+      const superAdmins = db.adminUsers.filter(u => u.role === 'SuperAdmin');
+      if (superAdmins.length <= 1) {
+        return res.status(400).json({
+          status: 'error',
+          success: false,
+          error: 'Cannot delete the last SuperAdmin user'
+        });
+      }
+    }
+
+    // Prevent users from deleting themselves
+    if (user.id === currentUser.id) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'You cannot delete your own account'
+      });
+    }
+
+    const deletedUsername = user.username;
+    db.adminUsers.splice(userIndex, 1);
+    db.saveToFile();
+
+    console.log(`🗑️ Admin user deleted: ${deletedUsername}`);
+
+    res.json({
+      status: 'success',
+      success: true,
+      message: `User "${deletedUsername}" deleted successfully`
+    });
+  } catch (err: any) {
+    console.error('❌ Error deleting admin user:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to delete admin user'
+    });
   }
-
-  db.adminUsers.splice(userIndex, 1);
-
-  res.json({
-    status: 'success',
-    success: true,
-    message: 'User deleted successfully'
-  });
 });
 
-/* ==========================================================================
-   9. DASHBOARD STATS ENDPOINT
-   ========================================================================== */
-
-/**
- * GET /api/admin/dashboard/stats
- * Overview analytics for Admin Dashboard
- */
+// ============================================================
+// 9. DASHBOARD STATS
+// ============================================================
 apiRouter.get('/admin/dashboard/stats', authenticateToken, (req: Request, res: Response) => {
   const totalPackages = db.packages.length;
   const activePackages = db.packages.filter(p => p.isActive).length;
@@ -1390,3 +1614,5 @@ apiRouter.get('/admin/dashboard/stats', authenticateToken, (req: Request, res: R
     }
   });
 });
+
+export default apiRouter;

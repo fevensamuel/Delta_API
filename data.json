@@ -1,0 +1,266 @@
+{
+  "packages": [
+    {
+      "id": "pkg-1786298944290",
+      "titleEn": "Umrah Package",
+      "titleAr": "",
+      "titleAm": "",
+      "category": "Premium",
+      "priceUsd": 312.53906738342295,
+      "durationDays": 2,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Visa",
+        "Passport",
+        "Hote",
+        "Flight tickets",
+        "Foods and Drinks",
+        "Prayer"
+      ],
+      "availableDates": [
+        "2026-08-03"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Day 1: Arrival & Welcome",
+          "description": "Arrival"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Day 2: Day of Worship",
+          "description": "Worship"
+        }
+      ],
+      "imageUrl": "/uploads/packages/1786298944212-148621680-umrah2.jpg",
+      "isActive": true,
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-09T18:09:04.289Z",
+      "updatedAt": "2026-08-09T18:09:04.289Z"
+    }
+  ],
+  "subscribers": [
+    {
+      "id": "sub-1",
+      "phone": "+251911223344",
+      "email": "subscriber1@example.com",
+      "name": "Abebe Bikila",
+      "channel": "Footer Newsletter",
+      "packageInterestId": "pkg-1",
+      "optInStatus": true,
+      "createdAt": "2026-08-08T21:33:32.843Z",
+      "updatedAt": "2026-08-08T21:33:32.843Z"
+    },
+    {
+      "id": "sub-2",
+      "phone": "+251911887766",
+      "email": "subscriber2@example.com",
+      "name": "Sara Mohammed",
+      "channel": "Umrah Package Modal",
+      "packageInterestId": "pkg-2",
+      "optInStatus": true,
+      "createdAt": "2026-08-08T21:33:32.843Z",
+      "updatedAt": "2026-08-08T21:33:32.843Z"
+    }
+  ],
+  "inquiries": [
+    {
+      "id": "inq-1",
+      "fullName": "Mohammed Ahmed Al-Sayed",
+      "phone": "+251922334455",
+      "email": "mohammed.ahmed@example.com",
+      "subject": "Inquiry regarding Ramadan Umrah 2026 Group Booking",
+      "message": "Assalamu Alaikum. We have a family group of 8 persons interested in the Premium Umrah package. Please advise on custom flight options.",
+      "status": "New",
+      "source": "Contact Us Form",
+      "createdAt": "2026-08-08T21:33:32.843Z",
+      "updatedAt": "2026-08-08T21:33:32.843Z"
+    },
+    {
+      "id": "inq-2",
+      "fullName": "Fatima Zewde",
+      "phone": "+251911001122",
+      "email": "fatima.z@example.com",
+      "subject": "Visa requirement for family members",
+      "message": "Hello Delta Travel, I want to confirm if children under 12 need separate medical certificates for Umrah visa.",
+      "status": "Contacted",
+      "source": "Package Page",
+      "createdAt": "2026-08-08T21:33:32.843Z",
+      "updatedAt": "2026-08-08T21:33:32.843Z"
+    }
+  ],
+  "gallery": [
+    {
+      "id": "gal-bulk-1786301282101-1-mvhs",
+      "type": "video",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "",
+      "videoUrl": "/uploads/videos/1786301281966-227669432-How_to_Perform_Umrah_Step-by-Step___Short_Guide_by_Mufti_Sarfraz.mp4",
+      "duration": "00:32",
+      "location": "Saudi",
+      "description": "Test for Bulk video Uploads",
+      "isActive": true,
+      "sortOrder": 2,
+      "uploadDate": "2026-08-09",
+      "createdAt": "2026-08-09T18:48:02.101Z",
+      "updatedAt": "2026-08-09T18:48:02.101Z"
+    },
+    {
+      "id": "gal-bulk-1786301282095-0-diqf",
+      "type": "video",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "",
+      "videoUrl": "/uploads/videos/1786301281911-929356996-How_to_Perform___Umrah.mp4",
+      "duration": "00:44",
+      "location": "Saudi",
+      "description": "Test for Bulk video Uploads",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-09",
+      "createdAt": "2026-08-09T18:48:02.094Z",
+      "updatedAt": "2026-08-09T18:48:02.094Z"
+    },
+    {
+      "id": "gal-bulk-1786299158020-2-9hfv",
+      "type": "photo",
+      "titleEn": "Dentists",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786299157998-144269241-dentist2.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "USA",
+      "description": "Testing Bulk Upload",
+      "isActive": true,
+      "sortOrder": 3,
+      "uploadDate": "2026-08-09",
+      "createdAt": "2026-08-09T18:12:38.020Z",
+      "updatedAt": "2026-08-09T18:12:38.020Z"
+    },
+    {
+      "id": "gal-bulk-1786299158019-1-i6ic",
+      "type": "photo",
+      "titleEn": "Dentists",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786299157998-706277263-dentist3.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "USA",
+      "description": "Testing Bulk Upload",
+      "isActive": true,
+      "sortOrder": 2,
+      "uploadDate": "2026-08-09",
+      "createdAt": "2026-08-09T18:12:38.019Z",
+      "updatedAt": "2026-08-09T18:12:38.019Z"
+    },
+    {
+      "id": "gal-bulk-1786299158019-0-xfwo",
+      "type": "photo",
+      "titleEn": "Dentists",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786299157995-544413526-dentist1.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "USA",
+      "description": "Testing Bulk Upload",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-09",
+      "createdAt": "2026-08-09T18:12:38.018Z",
+      "updatedAt": "2026-08-09T18:12:38.018Z"
+    },
+    {
+      "id": "gal-1786283291971-75",
+      "type": "video",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "",
+      "videoUrl": "/uploads/videos/1786283291775-456328056-video.mp4",
+      "duration": "01:42",
+      "location": "USA",
+      "description": "Test Video",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-09",
+      "createdAt": "2026-08-09T13:48:11.971Z",
+      "updatedAt": "2026-08-09T13:48:11.971Z"
+    },
+    {
+      "id": "gal-1786283249594-484",
+      "type": "photo",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786283249550-156004642-image.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "USA",
+      "description": "Test Image",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-09",
+      "createdAt": "2026-08-09T13:47:29.594Z",
+      "updatedAt": "2026-08-09T13:47:29.594Z"
+    }
+  ],
+  "adminUsers": [
+    {
+      "id": "usr-1",
+      "username": "superadmin",
+      "email": "superadmin@deltatravel.com",
+      "passwordHash": "$2b$10$e2qfszEvg3lVJCX.M8e4quDdeGqtlLVy2RqcHt0OKs.dgoFNHPihO",
+      "role": "SuperAdmin",
+      "lastLogin": "2026-08-08T21:33:32.843Z",
+      "isActive": true,
+      "status": "Active",
+      "createdAt": "2026-08-08T21:33:32.843Z",
+      "updatedAt": "2026-08-08T21:33:32.843Z"
+    },
+    {
+      "id": "usr-2",
+      "username": "admin",
+      "email": "admin@deltatravel.com",
+      "passwordHash": "$2b$10$e2qfszEvg3lVJCX.M8e4quDdeGqtlLVy2RqcHt0OKs.dgoFNHPihO",
+      "role": "Admin",
+      "lastLogin": "2026-08-08T21:33:32.843Z",
+      "isActive": true,
+      "status": "Active",
+      "createdAt": "2026-08-08T21:33:32.843Z",
+      "updatedAt": "2026-08-08T21:33:32.843Z"
+    },
+    {
+      "id": "usr-3",
+      "username": "editor",
+      "email": "editor@deltatravel.com",
+      "passwordHash": "$2b$10$GLEfSlFpQSqz0zl/6goB5.caEPzHHSuHle83bWvMfExJIbK4VHCIa",
+      "role": "Editor",
+      "lastLogin": null,
+      "isActive": true,
+      "status": "Active",
+      "createdAt": "2026-08-08T21:33:32.843Z",
+      "updatedAt": "2026-08-08T21:33:32.843Z"
+    },
+    {
+      "id": "usr-1786308730934",
+      "username": "testuser",
+      "email": "test@example.com",
+      "passwordHash": "$2b$10$Pcmtyc40BSuMtruF0PWfV.wdU9hM5sK2c3eW5bZY733Cx9U4R4AuK",
+      "role": "Admin",
+      "lastLogin": null,
+      "isActive": true,
+      "status": "Active",
+      "createdAt": "2026-08-09T20:52:10.934Z",
+      "updatedAt": "2026-08-09T20:52:10.934Z"
+    }
+  ],
+  "smsLogs": [
+    {
+      "id": "sms-1",
+      "phone": "+251911223344",
+      "message": "Thank you for subscribing to Delta Travel & Tour updates!",
+      "status": "Delivered",
+      "campaignName": "Subscription Welcome SMS",
+      "sentAt": "2026-08-08T21:33:32.843Z"
+    }
+  ]
+}

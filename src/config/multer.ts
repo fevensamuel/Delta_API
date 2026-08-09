@@ -2,57 +2,72 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
-const uploadDir = path.resolve(process.env.UPLOAD_PATH || './uploads');
-const galleryDir = path.join(uploadDir, 'gallery');
-const thumbnailsDir = path.join(uploadDir, 'thumbnails');
+// Define upload directories
+const uploadPath = path.resolve(process.env.UPLOAD_PATH || './uploads');
+const videosPath = path.join(uploadPath, 'videos');
+const imagesPath = path.join(uploadPath, 'images');
+const packagesPath = path.join(uploadPath, 'packages');
 
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-if (!fs.existsSync(galleryDir)) fs.mkdirSync(galleryDir, { recursive: true });
-if (!fs.existsSync(thumbnailsDir)) fs.mkdirSync(thumbnailsDir, { recursive: true });
+// Ensure directories exist
+[videosPath, imagesPath, packagesPath].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 
+// Configure storage - using mimetype to determine destination
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    if (file.fieldname === 'thumbnail' || file.fieldname === 'image') {
-      cb(null, thumbnailsDir);
-    } else if (file.fieldname === 'video') {
-      cb(null, galleryDir);
+    // Check the file's mimetype to determine where to save
+    if (file.mimetype.startsWith('video/')) {
+      console.log(`🎬 Saving video to: ${videosPath}`);
+      cb(null, videosPath);
+    } else if (file.mimetype.startsWith('image/')) {
+      console.log(`🖼️ Saving image to: ${imagesPath}`);
+      cb(null, imagesPath);
     } else {
-      cb(null, galleryDir);
+      console.log(`📁 Saving to default: ${imagesPath}`);
+      cb(null, imagesPath);
     }
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname) || (file.mimetype.includes('image') ? '.jpg' : '.mp4');
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-]/g, '_');
+    const finalName = uniqueSuffix + '-' + sanitizedName;
+    console.log(`📄 Saving as: ${finalName}`);
+    cb(null, finalName);
   }
 });
 
-const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/jpg'];
-  const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v'];
-
-  if (file.fieldname === 'image' || file.fieldname === 'thumbnail') {
-    if (allowedImageTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only JPEG, PNG, WebP, and GIF images are allowed'));
-    }
-  } else if (file.fieldname === 'video') {
-    if (allowedVideoTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only MP4, MOV, and WebM videos are allowed'));
-    }
-  } else {
-    cb(null, true);
-  }
-};
-
+// Create multer instance
 export const upload = multer({
   storage,
-  fileFilter,
-  limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB max
-    files: 10
+  limits: { 
+    fileSize: 500 * 1024 * 1024
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and videos are allowed'));
+    }
   }
 });
+
+// Export upload fields for different use cases
+export const galleryUploadFields = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'video', maxCount: 1 }
+]);
+
+export const packageUpload = upload.single('packageImage');
+
+export const bulkUpload = upload.array('files', 50);
+
+// Export paths for use in routes
+export const uploadPaths = {
+  uploadPath,
+  videosPath,
+  imagesPath,
+  packagesPath
+};
