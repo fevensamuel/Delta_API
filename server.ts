@@ -16,14 +16,16 @@ async function startServer() {
   // Initialize Exchange Rate Service
   initExchangeRateService();
 
-  // Security & Permissive CORS
-  const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : [
-    'http://localhost:5173', 
-    'http://localhost:5174', 
-    'http://localhost:3000',
-    'https://delta-admin-beta.vercel.app',
-    'https://delta-public-website.vercel.app'
-  ];
+  // Security & Permissive CORS - UPDATED with Vercel URL
+  const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) 
+    : [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3000',
+        'https://delta-admin-beta.vercel.app',  // Your Vercel frontend
+        'https://delta-travel-backend.onrender.com'  // Your backend itself
+      ];
   
   // CORS for API routes
   app.use(cors({
@@ -225,11 +227,22 @@ async function startServer() {
   // API Routes
   app.use('/api', apiRouter);
 
-  // Swagger Documentation
+  // Swagger Documentation - UPDATED with better Swagger UI options
   app.get('/api-docs/openapi.json', (req, res) => {
     res.json(openApiSpec);
   });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+    swaggerOptions: {
+      defaultModelExpandDepth: 3,
+      docExpansion: 'list',
+      filter: true,
+      showExtensions: true,
+      showCommonExtensions: true,
+      tryItOutEnabled: true,
+      persistAuthorization: true,
+      displayRequestDuration: true
+    }
+  }));
 
   // Error handling middleware for multer
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
