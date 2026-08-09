@@ -17,7 +17,13 @@ async function startServer() {
   initExchangeRateService();
 
   // Security & Permissive CORS
-  const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'];
+  const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) : [
+    'http://localhost:5173', 
+    'http://localhost:5174', 
+    'http://localhost:3000',
+    'https://delta-admin-beta.vercel.app',
+    'https://delta-public-website.vercel.app'
+  ];
   
   // CORS for API routes
   app.use(cors({
