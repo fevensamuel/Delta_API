@@ -16,20 +16,31 @@ async function startServer() {
   // Initialize Exchange Rate Service
   initExchangeRateService();
 
-  // Security & Permissive CORS - UPDATED with Vercel URL
+  // Security & Permissive CORS - UPDATED with all allowed origins
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) 
     : [
         'http://localhost:5173',
         'http://localhost:5174',
         'http://localhost:3000',
-        'https://delta-admin-beta.vercel.app',  // Your Vercel frontend
-        'https://delta-travel-backend.onrender.com'  // Your backend itself
+        'https://delta-admin-beta.vercel.app',
+        'https://delta-travel-backend.onrender.com',
+        'https://delta-admin-beta.vercel.app' // Add your custom domain if any
       ];
   
-  // CORS for API routes
+  // CORS for API routes - UPDATED with better error logging
   app.use(cors({
-    origin: allowedOrigins,
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.log('❌ Blocked by CORS:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Range'],
     exposedHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],

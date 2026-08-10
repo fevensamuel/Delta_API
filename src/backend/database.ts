@@ -24,7 +24,7 @@ export const testConnection = async () => {
   }
 };
 
-// Seed default admin users
+// Seed default admin user - ONLY ONE: admin@deltatravel.com / admin123
 const seedAdminUsers = async () => {
   const client = await pool.connect();
   try {
@@ -35,28 +35,14 @@ const seedAdminUsers = async () => {
       return;
     }
 
-    console.log('🔑 Seeding admin users...');
+    console.log('🔑 Seeding admin user...');
 
     const now = new Date().toISOString();
-    
-    // Generate proper bcrypt hashes
     const adminPasswordHash = await bcrypt.hash('admin123', 10);
-    const editorPasswordHash = await bcrypt.hash('editor123', 10);
 
     const users = [
       {
         id: 'usr-1',
-        username: 'superadmin',
-        email: 'superadmin@deltatravel.com',
-        passwordHash: adminPasswordHash,
-        role: 'SuperAdmin',
-        isActive: true,
-        status: 'Active',
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 'usr-2',
         username: 'admin',
         email: 'admin@deltatravel.com',
         passwordHash: adminPasswordHash,
@@ -65,18 +51,7 @@ const seedAdminUsers = async () => {
         status: 'Active',
         createdAt: now,
         updatedAt: now,
-      },
-      {
-        id: 'usr-3',
-        username: 'editor',
-        email: 'editor@deltatravel.com',
-        passwordHash: editorPasswordHash,
-        role: 'Editor',
-        isActive: true,
-        status: 'Active',
-        createdAt: now,
-        updatedAt: now,
-      },
+      }
     ];
 
     for (const user of users) {
@@ -99,13 +74,10 @@ const seedAdminUsers = async () => {
       );
     }
 
-    console.log('✅ Admin users seeded successfully.');
-    console.log('🔑 Login credentials:');
-    console.log('   admin@deltatravel.com / admin123');
-    console.log('   superadmin@deltatravel.com / admin123');
-    console.log('   editor@deltatravel.com / editor123');
+    console.log('✅ Admin user seeded successfully.');
+    console.log('🔑 Login credentials: admin@deltatravel.com / admin123');
   } catch (error) {
-    console.error('❌ Error seeding admin users:', error);
+    console.error('❌ Error seeding admin user:', error);
   } finally {
     client.release();
   }
@@ -123,7 +95,7 @@ export const initDatabase = async () => {
         username TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
-        role TEXT DEFAULT 'Editor',
+        role TEXT DEFAULT 'Admin',
         last_login TIMESTAMP,
         is_active BOOLEAN DEFAULT true,
         status TEXT DEFAULT 'Active',
@@ -218,7 +190,7 @@ export const initDatabase = async () => {
 
     console.log('✅ Database tables created successfully');
 
-    // Seed admin users - THIS WILL CREATE THE USERS
+    // Seed admin users - THIS WILL CREATE THE USER
     await seedAdminUsers();
   } catch (error) {
     console.error('❌ Database initialization error:', error);
@@ -566,7 +538,7 @@ export const dbOperations = {
       RETURNING *`,
       [
         id, data.username, data.email, data.passwordHash,
-        data.role || 'Editor', data.isActive !== undefined ? data.isActive : true,
+        data.role || 'Admin', data.isActive !== undefined ? data.isActive : true,
         data.status || 'Active'
       ]
     );

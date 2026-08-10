@@ -428,12 +428,10 @@ apiRouter.post('/admin/packages', authenticateToken, packageUpload, (req: Reques
       isActive
     } = req.body;
 
-    // Parse inclusions, availableDates, itinerary if they are sent as JSON strings
     const parsedInclusions = typeof inclusions === 'string' ? JSON.parse(inclusions) : inclusions;
     const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : availableDates;
     const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : itinerary;
 
-    // Get uploaded file
     const file = req.file;
     let imageUrl = '';
 
@@ -441,11 +439,9 @@ apiRouter.post('/admin/packages', authenticateToken, packageUpload, (req: Reques
       imageUrl = `/uploads/packages/${file.filename}`;
       console.log(`📦 Package image uploaded: ${file.filename} -> ${imageUrl}`);
     } else if (req.body.imageUrl) {
-      // Fallback: if no file but an imageUrl is provided (e.g., URL or base64), use it
       imageUrl = req.body.imageUrl;
     }
 
-    // Validation
     if (!titleEn || titleEn.trim() === '') {
       return res.status(400).json({
         status: 'error',
@@ -620,9 +616,8 @@ apiRouter.delete('/admin/packages/:id', authenticateToken, (req: Request, res: R
 });
 
 // ============================================================
-// 4. GALLERY - FIXED for correct file serving
+// 4. GALLERY
 // ============================================================
-
 apiRouter.get('/gallery', optionalAuthToken, (req: Request, res: Response) => {
   const isAdmin = Boolean((req as any).user);
   const showAll = req.query.all === 'true' && isAdmin;
@@ -677,7 +672,6 @@ apiRouter.post('/admin/gallery', authenticateToken, galleryUploadFields, (req: R
     let imageUrl = body.imageUrl || body.image_url || '';
     let videoUrl = body.videoUrl || body.video_url || '';
 
-    // Check if files were uploaded
     if (req.files) {
       const files = req.files as { [fieldname: string]: Express.Multer.File[] };
       if (files.image && files.image[0]) {
@@ -692,7 +686,6 @@ apiRouter.post('/admin/gallery', authenticateToken, galleryUploadFields, (req: R
       }
     }
 
-    // Validate title
     if (!titleEn) {
       return res.status(400).json({
         status: 'error',
@@ -701,7 +694,6 @@ apiRouter.post('/admin/gallery', authenticateToken, galleryUploadFields, (req: R
       });
     }
 
-    // For photos: imageUrl is required
     if (type === 'photo' && !imageUrl) {
       return res.status(400).json({
         status: 'error',
@@ -710,7 +702,6 @@ apiRouter.post('/admin/gallery', authenticateToken, galleryUploadFields, (req: R
       });
     }
 
-    // For videos: videoUrl is required (either from file upload or URL)
     if (type === 'video' && !videoUrl) {
       return res.status(400).json({
         status: 'error',
@@ -1248,319 +1239,8 @@ const handleGetSmsLogs = (req: Request, res: Response) => {
 apiRouter.get('/admin/sms/logs', authenticateToken, handleGetSmsLogs);
 apiRouter.get('/admin/sms/campaigns', authenticateToken, handleGetSmsLogs);
 
-
 // ============================================================
-// 8. ADMIN USERS MANAGEMENT (FULL CRUD)
-// ============================================================
-
-/**
- * GET /api/admin/users
- * List all admin users (SuperAdmin only)
- */
-apiRouter.get('/admin/users', authenticateToken, (req: Request, res: Response) => {
-  // Check if user is SuperAdmin
-  const reqUser = (req as any).user;
-  const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
-  
-  if (!currentUser || currentUser.role !== 'SuperAdmin') {
-    return res.status(403).json({
-      status: 'error',
-      success: false,
-      error: 'Access denied. SuperAdmin role required.'
-    });
-  }
-
-  const users = db.adminUsers.map(u => ({
-    id: String(u.id),
-    username: u.username,
-    email: u.email,
-    role: u.role,
-    lastLogin: u.lastLogin,
-    isActive: u.isActive,
-    status: u.status || 'Active',
-    createdAt: u.createdAt
-  }));
-
-  res.json({
-    status: 'success',
-    success: true,
-    count: users.length,
-    data: users
-  });
-});
-
-/**
- * POST /api/admin/users
- * Create a new admin user (SuperAdmin only)
- */
-// POST /api/admin/users - Create new admin user
-apiRouter.post('/admin/users', authenticateToken, (req: Request, res: Response) => {
-  try {
-    // Check if user is SuperAdmin
-    const reqUser = (req as any).user;
-    const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
-    
-    if (!currentUser || currentUser.role !== 'SuperAdmin') {
-      return res.status(403).json({
-        status: 'error',
-        success: false,
-        error: 'Access denied. SuperAdmin role required.'
-      });
-    }
-
-    const { username, email, password, role, status } = req.body;
-
-    // Log received data (without password for security)
-    console.log('📤 Creating user with:', { 
-      username, 
-      email, 
-      role, 
-      status,
-      hasPassword: !!password 
-    });
-
-    // Validate required fields
-    if (!username || !email || !password || !role) {
-      return res.status(400).json({
-        status: 'error',
-        success: false,
-        error: 'Missing required fields: username, email, password, and role are required'
-      });
-    }
-
-    // Validate password length
-    if (password.length < 6) {
-      return res.status(400).json({
-        status: 'error',
-        success: false,
-        error: 'Password must be at least 6 characters long'
-      });
-    }
-
-    // Check if user already exists
-    const existing = db.adminUsers.find(u => 
-      u.username.toLowerCase() === username.toLowerCase() || 
-      u.email.toLowerCase() === email.toLowerCase()
-    );
-    
-    if (existing) {
-      return res.status(400).json({
-        status: 'error',
-        success: false,
-        error: 'User with this username or email already exists'
-      });
-    }
-
-    // Create new user with hashed password
-    const now = new Date().toISOString();
-    const newUser = {
-      id: `usr-${Date.now()}`,
-      username: username.trim(),
-      email: email.trim().toLowerCase(),
-      passwordHash: bcrypt.hashSync(password, 10),
-      role: role as AdminRole,
-      lastLogin: null,
-      isActive: status !== 'Inactive',
-      status: status || 'Active',
-      createdAt: now,
-      updatedAt: now
-    };
-
-    db.adminUsers.push(newUser);
-    db.saveToFile();
-
-    console.log(`✅ New admin user created: ${newUser.username} (${newUser.role})`);
-
-    res.status(201).json({
-      status: 'success',
-      success: true,
-      message: 'Admin user created successfully',
-      data: {
-        id: String(newUser.id),
-        username: newUser.username,
-        email: newUser.email,
-        role: newUser.role,
-        isActive: newUser.isActive,
-        status: newUser.status || 'Active',
-        createdAt: newUser.createdAt
-      }
-    });
-  } catch (err: any) {
-    console.error('❌ Error creating admin user:', err);
-    res.status(500).json({
-      status: 'error',
-      success: false,
-      error: 'Failed to create admin user'
-    });
-  }
-});
-
-/**
- * PUT /api/admin/users/:id
- * Update an admin user (SuperAdmin only)
- */
-apiRouter.put('/admin/users/:id', authenticateToken, (req: Request, res: Response) => {
-  try {
-    // Check if user is SuperAdmin
-    const reqUser = (req as any).user;
-    const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
-    
-    if (!currentUser || currentUser.role !== 'SuperAdmin') {
-      return res.status(403).json({
-        status: 'error',
-        success: false,
-        error: 'Access denied. SuperAdmin role required.'
-      });
-    }
-
-    const { username, email, password, role, status } = req.body;
-    const userIndex = db.adminUsers.findIndex(u => String(u.id) === String(req.params.id));
-
-    if (userIndex === -1) {
-      return res.status(404).json({
-        status: 'error',
-        success: false,
-        error: 'User not found'
-      });
-    }
-
-    const user = db.adminUsers[userIndex];
-
-    // Prevent editing the last SuperAdmin's role
-    if (user.role === 'SuperAdmin' && role && role !== 'SuperAdmin') {
-      const superAdmins = db.adminUsers.filter(u => u.role === 'SuperAdmin');
-      if (superAdmins.length <= 1) {
-        return res.status(400).json({
-          status: 'error',
-          success: false,
-          error: 'Cannot change the role of the last SuperAdmin user'
-        });
-      }
-    }
-
-    // Update fields
-    if (username) user.username = username.trim();
-    if (email) user.email = email.trim().toLowerCase();
-    if (password) {
-      if (password.length < 6) {
-        return res.status(400).json({
-          status: 'error',
-          success: false,
-          error: 'Password must be at least 6 characters long'
-        });
-      }
-      user.passwordHash = bcrypt.hashSync(password, 10);
-    }
-    if (role) user.role = role as AdminRole;
-    if (status !== undefined) {
-      user.status = status;
-      user.isActive = status === 'Active';
-    }
-    user.updatedAt = new Date().toISOString();
-
-    db.saveToFile();
-
-    console.log(`✅ Admin user updated: ${user.username}`);
-
-    res.json({
-      status: 'success',
-      success: true,
-      message: 'User updated successfully',
-      data: {
-        id: String(user.id),
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        status: user.status || 'Active',
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt
-      }
-    });
-  } catch (err: any) {
-    console.error('❌ Error updating admin user:', err);
-    res.status(500).json({
-      status: 'error',
-      success: false,
-      error: 'Failed to update admin user'
-    });
-  }
-});
-
-/**
- * DELETE /api/admin/users/:id
- * Delete an admin user (SuperAdmin only)
- */
-apiRouter.delete('/admin/users/:id', authenticateToken, (req: Request, res: Response) => {
-  try {
-    // Check if user is SuperAdmin
-    const reqUser = (req as any).user;
-    const currentUser = db.adminUsers.find(u => u.id === reqUser.id);
-    
-    if (!currentUser || currentUser.role !== 'SuperAdmin') {
-      return res.status(403).json({
-        status: 'error',
-        success: false,
-        error: 'Access denied. SuperAdmin role required.'
-      });
-    }
-
-    const userIndex = db.adminUsers.findIndex(u => String(u.id) === String(req.params.id));
-
-    if (userIndex === -1) {
-      return res.status(404).json({
-        status: 'error',
-        success: false,
-        error: 'User not found'
-      });
-    }
-
-    const user = db.adminUsers[userIndex];
-
-    // Prevent deleting the last SuperAdmin
-    if (user.role === 'SuperAdmin') {
-      const superAdmins = db.adminUsers.filter(u => u.role === 'SuperAdmin');
-      if (superAdmins.length <= 1) {
-        return res.status(400).json({
-          status: 'error',
-          success: false,
-          error: 'Cannot delete the last SuperAdmin user'
-        });
-      }
-    }
-
-    // Prevent users from deleting themselves
-    if (user.id === currentUser.id) {
-      return res.status(400).json({
-        status: 'error',
-        success: false,
-        error: 'You cannot delete your own account'
-      });
-    }
-
-    const deletedUsername = user.username;
-    db.adminUsers.splice(userIndex, 1);
-    db.saveToFile();
-
-    console.log(`🗑️ Admin user deleted: ${deletedUsername}`);
-
-    res.json({
-      status: 'success',
-      success: true,
-      message: `User "${deletedUsername}" deleted successfully`
-    });
-  } catch (err: any) {
-    console.error('❌ Error deleting admin user:', err);
-    res.status(500).json({
-      status: 'error',
-      success: false,
-      error: 'Failed to delete admin user'
-    });
-  }
-});
-
-// ============================================================
-// 9. DASHBOARD STATS
+// 8. DASHBOARD STATS
 // ============================================================
 apiRouter.get('/admin/dashboard/stats', authenticateToken, (req: Request, res: Response) => {
   const totalPackages = db.packages.length;

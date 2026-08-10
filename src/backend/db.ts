@@ -10,9 +10,8 @@ import type {
   TravelPackage
 } from '../types.js';
 
-// Pre-hashed password for default users ("admin123" and "editor123")
+// Only one admin user with password "admin123"
 const DEFAULT_PASSWORD_HASH = bcrypt.hashSync('admin123', 10);
-const EDITOR_PASSWORD_HASH = bcrypt.hashSync('editor123', 10);
 
 // Path to the JSON data file
 const DATA_FILE = path.join(process.cwd(), 'data.json');
@@ -36,7 +35,6 @@ class DatabaseStore {
 
   constructor() {
     this.loadFromFile();
-    // If file is empty, seed with defaults
     if (this.packages.length === 0 && this.gallery.length === 0) {
       this.seedDefaults();
       this.saveToFile();
@@ -67,7 +65,7 @@ class DatabaseStore {
     }
   }
 
- public saveToFile() {
+  public saveToFile() {
     try {
       const data: DatabaseData = {
         packages: this.packages,
@@ -147,38 +145,14 @@ class DatabaseStore {
     // Gallery – empty
     this.gallery = [];
 
-    // Admin users
+    // Admin users - ONLY ONE: admin@deltatravel.com / admin123
     this.adminUsers = [
       {
         id: 'usr-1',
-        username: 'superadmin',
-        email: 'superadmin@deltatravel.com',
-        passwordHash: DEFAULT_PASSWORD_HASH,
-        role: 'SuperAdmin',
-        lastLogin: now,
-        isActive: true,
-        status: 'Active',
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'usr-2',
         username: 'admin',
         email: 'admin@deltatravel.com',
         passwordHash: DEFAULT_PASSWORD_HASH,
         role: 'Admin',
-        lastLogin: now,
-        isActive: true,
-        status: 'Active',
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'usr-3',
-        username: 'editor',
-        email: 'editor@deltatravel.com',
-        passwordHash: EDITOR_PASSWORD_HASH,
-        role: 'Editor',
         lastLogin: null,
         isActive: true,
         status: 'Active',
@@ -267,6 +241,7 @@ class DatabaseStore {
   }
 
   addAdminUser(user: AdminUser) {
+    // Only allow if user doesn't already exist (but we won't call this from anywhere)
     this.adminUsers.push(user);
     this.saveToFile();
   }

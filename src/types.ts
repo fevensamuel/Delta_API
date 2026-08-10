@@ -77,11 +77,13 @@ export interface GalleryItem {
   description?: string;
   isActive: boolean;
   sortOrder: number;
+  uploadDate?: string;
   createdAt: string;
   updatedAt?: string;
 }
 
-export type AdminRole = 'SuperAdmin' | 'Admin' | 'Editor';
+// Only one role now: Admin
+export type AdminRole = 'Admin';
 
 export interface AdminUser {
   id: string | number;

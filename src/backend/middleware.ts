@@ -34,34 +34,6 @@ export const authenticateJWT = (req: AuthenticatedRequest, res: Response, next: 
 };
 
 /**
- * Role-Based Access Control (RBAC) Middleware
- * SuperAdmin > Admin > Editor
- */
-export const requireRole = (allowedRoles: AdminRole[]) => {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({ success: false, error: 'Unauthorized user context.' });
-    }
-
-    const { role } = req.user;
-
-    // SuperAdmin always has access
-    if (role === 'SuperAdmin') {
-      return next();
-    }
-
-    if (allowedRoles.includes(role)) {
-      return next();
-    }
-
-    return res.status(403).json({
-      success: false,
-      error: `Forbidden: Role '${role}' lacks privilege for this operation.`
-    });
-  };
-};
-
-/**
  * Simple In-Memory Rate Limiting Helper
  */
 const requestLog: Map<string, { count: number; resetTime: number }> = new Map();

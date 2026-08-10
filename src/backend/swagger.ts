@@ -106,19 +106,6 @@ export const openApiSpec = {
           updatedAt: { type: 'string' }
         }
       },
-      AdminUser: {
-        type: 'object',
-        properties: {
-          id: { type: 'string', example: 'usr-1' },
-          username: { type: 'string', example: 'admin' },
-          email: { type: 'string', example: 'admin@deltatravel.com' },
-          role: { type: 'string', enum: ['SuperAdmin', 'Admin', 'Editor'], example: 'Admin' },
-          isActive: { type: 'boolean', example: true },
-          status: { type: 'string', example: 'Active' },
-          lastLogin: { type: 'string', nullable: true },
-          createdAt: { type: 'string' }
-        }
-      },
       LoginRequest: {
         type: 'object',
         properties: {
@@ -134,7 +121,17 @@ export const openApiSpec = {
           success: { type: 'boolean', example: true },
           message: { type: 'string', example: 'Login successful' },
           token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
-          user: { $ref: '#/components/schemas/AdminUser' }
+          user: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              username: { type: 'string' },
+              email: { type: 'string' },
+              role: { type: 'string', example: 'Admin' },
+              isActive: { type: 'boolean' },
+              status: { type: 'string' }
+            }
+          }
         }
       },
       DashboardStats: {
@@ -688,71 +685,6 @@ export const openApiSpec = {
           }
         },
         responses: { 200: { description: 'Exchange rate updated successfully' } }
-      }
-    },
-    '/admin/users': {
-      get: {
-        summary: 'List all admin users (SuperAdmin only)',
-        tags: ['Admin Users'],
-        security: [{ bearerAuth: [] }],
-        responses: { 200: { description: 'List of admin users' } }
-      },
-      post: {
-        summary: 'Create new admin user (SuperAdmin only)',
-        tags: ['Admin Users'],
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  username: { type: 'string', example: 'newadmin' },
-                  email: { type: 'string', example: 'newadmin@deltatravel.com' },
-                  password: { type: 'string', example: 'SecurePass123!' },
-                  role: { type: 'string', enum: ['SuperAdmin', 'Admin', 'Editor'], example: 'Admin' },
-                  status: { type: 'string', enum: ['Active', 'Inactive'], example: 'Active' }
-                },
-                required: ['username', 'email', 'password', 'role']
-              }
-            }
-          }
-        },
-        responses: { 201: { description: 'Admin user created successfully' } }
-      }
-    },
-    '/admin/users/{id}': {
-      put: {
-        summary: 'Update admin user (SuperAdmin only)',
-        tags: ['Admin Users'],
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  username: { type: 'string', example: 'updatedadmin' },
-                  email: { type: 'string', example: 'updated@deltatravel.com' },
-                  password: { type: 'string', example: 'NewSecurePass123!' },
-                  role: { type: 'string', enum: ['SuperAdmin', 'Admin', 'Editor'] },
-                  status: { type: 'string', enum: ['Active', 'Inactive'] }
-                }
-              }
-            }
-          }
-        },
-        responses: { 200: { description: 'Admin user updated successfully' } }
-      },
-      delete: {
-        summary: 'Delete admin user (SuperAdmin only)',
-        tags: ['Admin Users'],
-        security: [{ bearerAuth: [] }],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        responses: { 200: { description: 'Admin user deleted successfully' } }
       }
     },
     '/login': {
