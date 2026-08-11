@@ -24,6 +24,7 @@ export interface TravelPackage {
   category: PackageCategory;
   priceUsd: number;
   priceEtb?: number;
+  priceSar?: number;
   durationDays: number;
   departureCity?: string;
   inclusions: string[];
@@ -72,6 +73,7 @@ export interface GalleryItem {
   titleAr?: string;
   imageUrl: string;
   videoUrl?: string;
+  thumbnailUrl?: string;
   duration?: string;
   location?: string;
   description?: string;

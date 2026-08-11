@@ -20,12 +20,12 @@ async function startServer() {
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) 
     : [
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:3000',
-        'https://delta-admin-beta.vercel.app',
-        'https://delta-travel-backend.onrender.com',
-        'https://delta-admin-beta.vercel.app' // Add your custom domain if any
+      'http://localhost:5173',
+      'http://localhost:5174',           
+      'http://localhost:3000',
+      'https://delta-admin-beta.vercel.app',        
+      'https://delta-public-website.vercel.app',    
+      'https://delta-travel-backend.onrender.com'
       ];
   
   // CORS for API routes - UPDATED with better error logging

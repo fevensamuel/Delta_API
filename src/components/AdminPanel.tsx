@@ -27,7 +27,6 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  UserCheck,
   Users,
   Video
 } from 'lucide-react';
@@ -51,13 +50,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [currentUser, setCurrentUser] = useState<{ id: number; username: string; email: string; role: AdminRole } | null>(null);
 
   // Login form state
-  const [loginUsername, setLoginUsername] = useState('superadmin');
+  const [loginUsername, setLoginUsername] = useState('admin');
   const [loginPassword, setLoginPassword] = useState('admin123');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
   // Admin Tab Navigation
-  const [activeTab, setActiveTab] = useState<'metrics' | 'packages' | 'subscribers' | 'inquiries' | 'gallery' | 'users' | 'swagger'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'packages' | 'subscribers' | 'inquiries' | 'gallery' | 'swagger'>('metrics');
 
   // Backend Data Collections
   const [packages, setPackages] = useState<TravelPackage[]>([]);
@@ -66,7 +65,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
-  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>([]);
 
   // Feedback Messages
@@ -335,9 +333,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [newUserForm, setNewUserForm] = useState({ username: '', email: '', password: '', role: 'Admin' as AdminRole });
-
   // SMS Campaign Form
   const [smsMessage, setSmsMessage] = useState('');
   const [smsSending, setSmsSending] = useState(false);
@@ -399,13 +394,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       if (inqs.data) setInquiries(inqs.data);
       if (gals.data) setGallery(gals.data);
       if (smss.data) setSmsLogs(smss.data);
-
-      // If SuperAdmin, fetch users
-      if (currentUser?.role === 'SuperAdmin') {
-        const uRes = await fetch('/api/admin/users', { headers: authHeader });
-        const uData = await uRes.json();
-        if (uData.data) setAdminUsers(uData.data);
-      }
     } catch (err) {
       console.error('Failed loading admin data:', err);
     }
@@ -578,34 +566,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   };
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token) return;
-
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(newUserForm)
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setActionSuccess('Admin user created successfully');
-        setShowUserModal(false);
-        setNewUserForm({ username: '', email: '', password: '', role: 'Admin' });
-        loadAdminData();
-      } else {
-        setActionError(data.error);
-      }
-    } catch (err) {
-      setActionError('Error creating user');
-    }
-  };
-
   // Render Login View if not authenticated
   if (!token || !currentUser) {
     return (
@@ -622,32 +582,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             </p>
           </div>
 
-          {/* Quick Credential Fill Buttons */}
+          {/* Quick Credential Fill Buttons - Only Admin */}
           <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 block">
-              ⚡ Quick Select Test Accounts
+              ⚡ Quick Select Account
             </span>
-            <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-              <button
-                type="button"
-                onClick={() => quickFill('superadmin', 'admin123')}
-                className="bg-white hover:bg-slate-100 text-slate-800 p-2 rounded-lg border border-slate-300 font-bold shadow-xs"
-              >
-                SuperAdmin
-              </button>
+            <div className="grid grid-cols-1 gap-1.5 text-[11px]">
               <button
                 type="button"
                 onClick={() => quickFill('admin', 'admin123')}
                 className="bg-white hover:bg-slate-100 text-slate-800 p-2 rounded-lg border border-slate-300 font-bold shadow-xs"
               >
                 Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => quickFill('editor', 'editor123')}
-                className="bg-white hover:bg-slate-100 text-slate-800 p-2 rounded-lg border border-slate-300 font-bold shadow-xs"
-              >
-                Editor
               </button>
             </div>
           </div>
@@ -748,7 +694,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </div>
         )}
 
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs - Removed Users Tab */}
         <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
           {[
             { id: 'metrics', label: 'Metrics Overview', icon: BarChart2 },
@@ -756,7 +702,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             { id: 'subscribers', label: `Subscribers (${subscribers.length})`, icon: Smartphone },
             { id: 'inquiries', label: `Inquiries (${inquiries.length})`, icon: Mail },
             { id: 'gallery', label: `Gallery (${gallery.length})`, icon: ImageIcon },
-            ...(currentUser.role === 'SuperAdmin' ? [{ id: 'users', label: 'Admin RBAC Users', icon: Users }] : []),
             { id: 'swagger', label: 'Swagger API Tester', icon: FileCode }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1540,50 +1485,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </div>
         )}
 
-        {/* TAB 8: SUPERADMIN USER MANAGEMENT & RBAC */}
-        {activeTab === 'users' && currentUser.role === 'SuperAdmin' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white font-serif">Admin Accounts & RBAC Roles</h3>
-              <button
-                onClick={() => setShowUserModal(true)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center space-x-1.5"
-              >
-                <UserCheck className="w-4 h-4" />
-                <span>Create Admin User</span>
-              </button>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
-                  <tr>
-                    <th className="p-3">Username</th>
-                    <th className="p-3">Email</th>
-                    <th className="p-3">Role</th>
-                    <th className="p-3">Last Login</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {adminUsers.map(u => (
-                    <tr key={u.id} className="hover:bg-slate-800/50">
-                      <td className="p-3 font-bold text-white">{u.username}</td>
-                      <td className="p-3">{u.email}</td>
-                      <td className="p-3">
-                        <span className="bg-amber-950 border border-amber-800 text-amber-300 text-[10px] font-bold px-2.5 py-0.5 rounded">
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="p-3 text-slate-400">{u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 9: SWAGGER API TESTER */}
+        {/* TAB 8: SWAGGER API TESTER */}
         {activeTab === 'swagger' && (
           <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -1717,74 +1619,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   className="px-5 py-2 bg-emerald-600 text-white font-bold rounded-lg"
                 >
                   Save Package
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Admin User Modal */}
-      {showUserModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-white font-serif">Create New Admin User</h3>
-            <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-300 mb-1">Username *</label>
-                <input
-                  type="text"
-                  required
-                  value={newUserForm.username}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
-                  className="w-full bg-slate-950 text-white placeholder-slate-500 p-2.5 rounded-xl border border-slate-800 font-medium"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-300 mb-1">Email *</label>
-                <input
-                  type="email"
-                  required
-                  value={newUserForm.email}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
-                  className="w-full bg-slate-950 text-white placeholder-slate-500 p-2.5 rounded-xl border border-slate-800 font-medium"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-300 mb-1">Password *</label>
-                <input
-                  type="password"
-                  required
-                  value={newUserForm.password}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
-                  className="w-full bg-slate-950 text-white placeholder-slate-500 p-2.5 rounded-xl border border-slate-800 font-medium"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-300 mb-1">Role Permission</label>
-                <select
-                  value={newUserForm.role}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value as AdminRole })}
-                  className="w-full bg-slate-950 text-white p-2.5 rounded-xl border border-slate-800 font-medium"
-                >
-                  <option value="Admin">Admin (Full CRUD)</option>
-                  <option value="Editor">Editor (Edit content only)</option>
-                  <option value="SuperAdmin">SuperAdmin (Full Control)</option>
-                </select>
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUserModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-emerald-600 text-white font-bold rounded-lg"
-                >
-                  Create User
                 </button>
               </div>
             </form>

@@ -1,0 +1,323 @@
+{
+  "packages": [
+    {
+      "id": "pkg-1786466286214",
+      "titleEn": "10 Days Premium Umrah Package",
+      "titleAr": "",
+      "titleAm": "",
+      "category": "Premium",
+      "priceUsd": 1250.1562695336918,
+      "durationDays": 10,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Visa",
+        "Hotel",
+        "Flight Tickets",
+        "Foods and Drinks",
+        "Tour Guide"
+      ],
+      "availableDates": [
+        "2026-08-16",
+        "2026-08-27"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Day 1: Arrival & Welcome",
+          "description": "Arrival"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Day 2: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 3,
+          "title": "Day 3: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 4,
+          "title": "Day 4: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 5,
+          "title": "Day 5: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 6,
+          "title": "Day 6: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 7,
+          "title": "Day 7: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 8,
+          "title": "Day 8: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 9,
+          "title": "Day 9: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 10,
+          "title": "Day 10: Farewell",
+          "description": ""
+        }
+      ],
+      "imageUrl": "/uploads/packages/1786466286197-109399691-umrah3.jpg",
+      "isActive": true,
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-11T16:38:06.213Z",
+      "updatedAt": "2026-08-11T16:38:06.213Z"
+    },
+    {
+      "id": "pkg-1786378916534",
+      "titleEn": "3 days Umrah Package",
+      "titleAr": "",
+      "titleAm": "",
+      "category": "VIP",
+      "priceUsd": 312.53906738342295,
+      "durationDays": 3,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Visa",
+        "Plane Tickets",
+        "Hotel",
+        "Foods and Drinks"
+      ],
+      "availableDates": [
+        "2026-08-15",
+        "2026-08-19"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Day 1: Arrival & Welcome",
+          "description": "Arrival"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Day 2: Day of Worship",
+          "description": "Worship"
+        },
+        {
+          "dayNumber": 3,
+          "title": "Day 3: Ziyarat Tour",
+          "description": "Tour"
+        }
+      ],
+      "imageUrl": "/uploads/packages/1786378916525-398259396-umrah2.jpg",
+      "isActive": true,
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-10T16:21:56.534Z",
+      "updatedAt": "2026-08-10T16:21:56.534Z"
+    }
+  ],
+  "subscribers": [
+    {
+      "id": "sub-1786456432865",
+      "phone": "+24191112345678",
+      "email": "",
+      "name": "",
+      "channel": "Web Banner",
+      "packageInterestId": null,
+      "optInStatus": true,
+      "createdAt": "2026-08-11T13:53:52.865Z",
+      "updatedAt": "2026-08-11T13:53:52.865Z"
+    },
+    {
+      "id": "sub-1",
+      "phone": "+251911223344",
+      "email": "subscriber1@example.com",
+      "name": "Abebe Bikila",
+      "channel": "Footer Newsletter",
+      "packageInterestId": "pkg-1",
+      "optInStatus": true,
+      "createdAt": "2026-08-10T10:48:57.788Z",
+      "updatedAt": "2026-08-10T10:48:57.788Z"
+    },
+    {
+      "id": "sub-2",
+      "phone": "+251911887766",
+      "email": "subscriber2@example.com",
+      "name": "Sara Mohammed",
+      "channel": "Umrah Package Modal",
+      "packageInterestId": "pkg-2",
+      "optInStatus": true,
+      "createdAt": "2026-08-10T10:48:57.788Z",
+      "updatedAt": "2026-08-10T10:48:57.788Z"
+    }
+  ],
+  "inquiries": [
+    {
+      "id": "inq-1",
+      "fullName": "Mohammed Ahmed Al-Sayed",
+      "phone": "+251922334455",
+      "email": "mohammed.ahmed@example.com",
+      "subject": "Inquiry regarding Ramadan Umrah 2026 Group Booking",
+      "message": "Assalamu Alaikum. We have a family group of 8 persons interested in the Premium Umrah package. Please advise on custom flight options.",
+      "status": "New",
+      "source": "Contact Us Form",
+      "createdAt": "2026-08-10T10:48:57.788Z",
+      "updatedAt": "2026-08-10T10:48:57.788Z"
+    },
+    {
+      "id": "inq-2",
+      "fullName": "Fatima Zewde",
+      "phone": "+251911001122",
+      "email": "fatima.z@example.com",
+      "subject": "Visa requirement for family members",
+      "message": "Hello Delta Travel, I want to confirm if children under 12 need separate medical certificates for Umrah visa.",
+      "status": "Contacted",
+      "source": "Package Page",
+      "createdAt": "2026-08-10T10:48:57.788Z",
+      "updatedAt": "2026-08-10T10:48:57.788Z"
+    }
+  ],
+  "gallery": [
+    {
+      "id": "gal-bulk-1786451893101-1-rcpi",
+      "type": "video",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "",
+      "videoUrl": "/uploads/videos/1786451892950-705501719-How_to_Perform_Umrah_Step-by-Step___Short_Guide_by_Mufti_Sarfraz.mp4",
+      "duration": "00:32",
+      "location": "Saudi",
+      "description": "Testing Bulk Video Uploads",
+      "isActive": true,
+      "sortOrder": 2,
+      "uploadDate": "2026-08-11",
+      "createdAt": "2026-08-11T12:38:13.101Z",
+      "updatedAt": "2026-08-11T12:38:13.101Z"
+    },
+    {
+      "id": "gal-bulk-1786451893100-0-08ul",
+      "type": "video",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "",
+      "videoUrl": "/uploads/videos/1786451892903-51121801-How_to_Perform___Umrah.mp4",
+      "duration": "00:44",
+      "location": "Saudi",
+      "description": "Testing Bulk Video Uploads",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-11",
+      "createdAt": "2026-08-11T12:38:13.098Z",
+      "updatedAt": "2026-08-11T12:38:13.098Z"
+    },
+    {
+      "id": "gal-1786382600071-242",
+      "type": "video",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "",
+      "videoUrl": "/uploads/videos/1786382599877-482395536-video.mp4",
+      "duration": "01:42",
+      "location": "Saudi",
+      "description": "Testing Video Uploads",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-10",
+      "createdAt": "2026-08-10T17:23:20.070Z",
+      "updatedAt": "2026-08-10T17:23:20.070Z"
+    },
+    {
+      "id": "gal-1786378768196-911",
+      "type": "photo",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786378768187-647898278-image.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "Saudi",
+      "description": "Testing Image Uploads",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-10",
+      "createdAt": "2026-08-10T16:19:28.196Z",
+      "updatedAt": "2026-08-10T16:19:28.196Z"
+    },
+    {
+      "id": "gal-bulk-1786378671293-2-0610",
+      "type": "photo",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786378671259-978649501-dentist2.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "USA",
+      "description": "Testing Bulk Photo Upload",
+      "isActive": true,
+      "sortOrder": 3,
+      "uploadDate": "2026-08-10",
+      "createdAt": "2026-08-10T16:17:51.293Z",
+      "updatedAt": "2026-08-10T16:17:51.293Z"
+    },
+    {
+      "id": "gal-bulk-1786378671290-1-t9a2",
+      "type": "photo",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786378671253-9049037-dentist3.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "USA",
+      "description": "Testing Bulk Photo Upload",
+      "isActive": true,
+      "sortOrder": 2,
+      "uploadDate": "2026-08-10",
+      "createdAt": "2026-08-10T16:17:51.290Z",
+      "updatedAt": "2026-08-10T16:17:51.290Z"
+    },
+    {
+      "id": "gal-bulk-1786378671286-0-0t10",
+      "type": "photo",
+      "titleEn": "Test",
+      "titleAr": "",
+      "imageUrl": "/uploads/images/1786378671245-938663378-dentist1.jpg",
+      "videoUrl": "",
+      "duration": "",
+      "location": "USA",
+      "description": "Testing Bulk Photo Upload",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-10",
+      "createdAt": "2026-08-10T16:17:51.284Z",
+      "updatedAt": "2026-08-10T16:17:51.284Z"
+    }
+  ],
+  "adminUsers": [
+    {
+      "id": "usr-1",
+      "username": "admin",
+      "email": "admin@deltatravel.com",
+      "passwordHash": "$2b$10$SHlKDLU/gUVOCM3dQfUXG.11Ni.GsD5AV8XvID4yv0ZYcavaBpZQq",
+      "role": "Admin",
+      "lastLogin": "2026-08-10T17:22:30.079Z",
+      "isActive": true,
+      "status": "Active",
+      "createdAt": "2026-08-10T10:48:57.788Z",
+      "updatedAt": "2026-08-10T10:48:57.788Z"
+    }
+  ],
+  "smsLogs": [
+    {
+      "id": "sms-1",
+      "phone": "+251911223344",
+      "message": "Thank you for subscribing to Delta Travel & Tour updates!",
+      "status": "Delivered",
+      "campaignName": "Subscription Welcome SMS",
+      "sentAt": "2026-08-10T10:48:57.788Z"
+    }
+  ]
+}

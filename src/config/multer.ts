@@ -60,7 +60,7 @@ export const galleryUploadFields = upload.fields([
   { name: 'video', maxCount: 1 }
 ]);
 
-export const packageUpload = upload.single('packageImage');
+export const packageUpload = upload.single('packageImage'); // kept for backward compatibility but no longer used directly
 
 export const bulkUpload = upload.array('files', 50);
 
