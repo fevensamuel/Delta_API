@@ -106,6 +106,38 @@ export const openApiSpec = {
           updatedAt: { type: 'string' }
         }
       },
+      FAQ: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: 'faq-1' },
+          question: { type: 'string', example: 'What is included in the Umrah package?' },
+          answer: { type: 'string', example: 'Our Umrah packages include visa processing, round-trip flights, hotel accommodation, transportation, and a dedicated tour guide (Ustaz).' }
+        }
+      },
+      SocialLink: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: 'sl-1' },
+          platform: { type: 'string', example: 'facebook' },
+          url: { type: 'string', example: 'https://facebook.com/deltatravel' },
+          isActive: { type: 'boolean', example: true },
+          icon: { type: 'string', example: 'Facebook' }
+        }
+      },
+      TeamMember: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: 'tm-1' },
+          name: { type: 'string', example: 'Sheikh Omar Al-Hassan' },
+          role: { type: 'string', example: 'Head Mutawwif & Islamic Scholar' },
+          bio: { type: 'string', example: '12+ years leading Tawaf and Sa\'i rituals' },
+          imageUrl: { type: 'string', example: '/uploads/team/image.jpg' },
+          order: { type: 'integer', example: 1 },
+          isActive: { type: 'boolean', example: true },
+          createdAt: { type: 'string' },
+          updatedAt: { type: 'string' }
+        }
+      },
       LoginRequest: {
         type: 'object',
         properties: {
@@ -167,6 +199,9 @@ export const openApiSpec = {
     }
   },
   paths: {
+    // ============================================================
+    // PUBLIC ENDPOINTS
+    // ============================================================
     '/exchange-rate': {
       get: {
         summary: 'Get real-time USD to ETB exchange rate',
@@ -267,6 +302,92 @@ export const openApiSpec = {
         responses: { 200: { description: 'Gallery item details' } }
       }
     },
+    '/faqs': {
+      get: {
+        summary: 'Get all active FAQs',
+        tags: ['Public'],
+        responses: {
+          200: {
+            description: 'List of FAQs',
+            content: {
+              'application/json': {
+                example: {
+                  status: 'success',
+                  success: true,
+                  count: 5,
+                  data: [
+                    {
+                      id: 'faq-1',
+                      question: 'What is included in the Umrah package?',
+                      answer: 'Our Umrah packages include visa processing, round-trip flights, hotel accommodation, transportation, and a dedicated tour guide (Ustaz).'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/social-links': {
+      get: {
+        summary: 'Get all active social media links',
+        tags: ['Public'],
+        responses: {
+          200: {
+            description: 'List of social links',
+            content: {
+              'application/json': {
+                example: {
+                  status: 'success',
+                  success: true,
+                  data: [
+                    {
+                      id: 'sl-1',
+                      platform: 'facebook',
+                      url: 'https://facebook.com/deltatravel',
+                      isActive: true,
+                      icon: 'Facebook'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/team-members': {
+      get: {
+        summary: 'Get all active team members',
+        tags: ['Public'],
+        responses: {
+          200: {
+            description: 'List of team members',
+            content: {
+              'application/json': {
+                example: {
+                  status: 'success',
+                  success: true,
+                  count: 3,
+                  data: [
+                    {
+                      id: 'tm-1',
+                      name: 'Sheikh Omar Al-Hassan',
+                      role: 'Head Mutawwif & Islamic Scholar',
+                      bio: '12+ years leading Tawaf and Sa\'i rituals; graduate of Islamic University of Madinah.',
+                      imageUrl: '/uploads/team/image.jpg',
+                      order: 1,
+                      isActive: true
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     '/subscribers': {
       post: {
         summary: 'Subscribe user for SMS updates',
@@ -318,6 +439,10 @@ export const openApiSpec = {
         responses: { 201: { description: 'Inquiry submitted' } }
       }
     },
+
+    // ============================================================
+    // ADMIN AUTH ENDPOINTS
+    // ============================================================
     '/admin/auth/login': {
       post: {
         summary: 'Admin Authentication Login',
@@ -350,6 +475,10 @@ export const openApiSpec = {
         responses: { 200: { description: 'Current admin user profile' } }
       }
     },
+
+    // ============================================================
+    // ADMIN DASHBOARD
+    // ============================================================
     '/admin/dashboard/stats': {
       get: {
         summary: 'Get administrative overview stats and analytics',
@@ -367,6 +496,10 @@ export const openApiSpec = {
         }
       }
     },
+
+    // ============================================================
+    // ADMIN PACKAGES
+    // ============================================================
     '/admin/packages': {
       get: {
         summary: 'List all packages (admin view)',
@@ -429,7 +562,17 @@ export const openApiSpec = {
         responses: { 200: { description: 'Package deleted successfully' } }
       }
     },
+
+    // ============================================================
+    // ADMIN GALLERY
+    // ============================================================
     '/admin/gallery': {
+      get: {
+        summary: 'List all gallery items (admin view)',
+        tags: ['Admin Gallery'],
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'List of all gallery items' } }
+      },
       post: {
         summary: 'Upload single gallery item (photo or video)',
         tags: ['Admin Gallery'],
@@ -501,6 +644,10 @@ export const openApiSpec = {
         responses: { 200: { description: 'Gallery item deleted successfully' } }
       }
     },
+
+    // ============================================================
+    // ADMIN INQUIRIES
+    // ============================================================
     '/admin/inquiries': {
       get: {
         summary: 'List all customer inquiries',
@@ -532,6 +679,10 @@ export const openApiSpec = {
         responses: { 200: { description: 'Updated inquiry status' } }
       }
     },
+
+    // ============================================================
+    // ADMIN SUBSCRIBERS
+    // ============================================================
     '/admin/subscribers': {
       get: {
         summary: 'List all subscribers',
@@ -596,6 +747,10 @@ export const openApiSpec = {
         responses: { 200: { description: 'Subscribers deleted' } }
       }
     },
+
+    // ============================================================
+    // ADMIN SMS
+    // ============================================================
     '/admin/sms/campaign': {
       post: {
         summary: 'Send SMS campaign with recipient filters',
@@ -659,6 +814,10 @@ export const openApiSpec = {
         responses: { 200: { description: 'List of SMS campaigns' } }
       }
     },
+
+    // ============================================================
+    // ADMIN EXCHANGE RATE
+    // ============================================================
     '/admin/exchange-rate': {
       get: {
         summary: 'Get exchange rate for admin dashboard',
@@ -687,6 +846,257 @@ export const openApiSpec = {
         responses: { 200: { description: 'Exchange rate updated successfully' } }
       }
     },
+
+    // ============================================================
+    // ADMIN FAQS
+    // ============================================================
+    '/admin/faqs': {
+      get: {
+        summary: 'Get all FAQs (admin view)',
+        tags: ['Admin FAQs'],
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'List of all FAQs',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'success' },
+                    success: { type: 'boolean', example: true },
+                    count: { type: 'integer', example: 5 },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/FAQ' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        summary: 'Create a new FAQ',
+        tags: ['Admin FAQs'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  question: { type: 'string', example: 'What is the best time for Umrah?' },
+                  answer: { type: 'string', example: 'The best time is during the cooler months from November to March.' }
+                },
+                required: ['question', 'answer']
+              }
+            }
+          }
+        },
+        responses: { 201: { description: 'FAQ created successfully' } }
+      }
+    },
+    '/admin/faqs/{id}': {
+      put: {
+        summary: 'Update an existing FAQ',
+        tags: ['Admin FAQs'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  question: { type: 'string', example: 'Updated question?' },
+                  answer: { type: 'string', example: 'Updated answer.' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'FAQ updated successfully' } }
+      },
+      delete: {
+        summary: 'Delete an FAQ',
+        tags: ['Admin FAQs'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'FAQ deleted successfully' } }
+      }
+    },
+
+    // ============================================================
+    // ADMIN SOCIAL LINKS
+    // ============================================================
+    '/admin/social-links': {
+      get: {
+        summary: 'Get all social links (admin view)',
+        tags: ['Admin Social Links'],
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'List of all social links',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'success' },
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/SocialLink' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        summary: 'Create a new social link',
+        tags: ['Admin Social Links'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  platform: { type: 'string', example: 'youtube' },
+                  url: { type: 'string', example: 'https://youtube.com/deltatravel' },
+                  isActive: { type: 'boolean', example: true }
+                },
+                required: ['platform', 'url']
+              }
+            }
+          }
+        },
+        responses: { 201: { description: 'Social link created successfully' } }
+      }
+    },
+    '/admin/social-links/{id}': {
+      put: {
+        summary: 'Update a social link',
+        tags: ['Admin Social Links'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  url: { type: 'string', example: 'https://youtube.com/deltatravel' },
+                  isActive: { type: 'boolean', example: true }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Social link updated successfully' } }
+      },
+      delete: {
+        summary: 'Delete a social link',
+        tags: ['Admin Social Links'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Social link deleted successfully' } }
+      }
+    },
+
+    // ============================================================
+    // ADMIN TEAM MEMBERS
+    // ============================================================
+    '/admin/team-members': {
+      get: {
+        summary: 'Get all team members (admin view)',
+        tags: ['Admin Team Members'],
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'List of all team members',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'success' },
+                    success: { type: 'boolean', example: true },
+                    count: { type: 'integer', example: 3 },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/TeamMember' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        summary: 'Create a new team member with image upload',
+        tags: ['Admin Team Members'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', example: 'Sheikh Omar Al-Hassan' },
+                  role: { type: 'string', example: 'Head Mutawwif & Islamic Scholar' },
+                  bio: { type: 'string', example: '12+ years leading Tawaf and Sa\'i rituals.' },
+                  order: { type: 'integer', example: 1 },
+                  isActive: { type: 'boolean', example: true },
+                  image: { type: 'string', format: 'binary', description: 'Team member photo (JPG, PNG, WEBP)' }
+                },
+                required: ['name', 'role', 'bio', 'image']
+              }
+            }
+          }
+        },
+        responses: { 201: { description: 'Team member created successfully' } }
+      }
+    },
+    '/admin/team-members/{id}': {
+      put: {
+        summary: 'Update a team member with optional image upload',
+        tags: ['Admin Team Members'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', example: 'Updated Name' },
+                  role: { type: 'string', example: 'Updated Role' },
+                  bio: { type: 'string', example: 'Updated bio.' },
+                  order: { type: 'integer', example: 2 },
+                  isActive: { type: 'boolean', example: true },
+                  image: { type: 'string', format: 'binary', description: 'New team member photo (optional)' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Team member updated successfully' } }
+      },
+      delete: {
+        summary: 'Delete a team member',
+        tags: ['Admin Team Members'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Team member deleted successfully' } }
+      }
+    },
+
+    // ============================================================
+    // LEGACY ENDPOINTS (Aliases)
+    // ============================================================
     '/login': {
       post: {
         summary: 'Standardized admin login (alias)',

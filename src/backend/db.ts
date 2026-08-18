@@ -7,13 +7,17 @@ import type {
   Inquiry,
   SmsLog,
   Subscriber,
-  TravelPackage
+  TravelPackage,
+  SocialLink,
+  PriceLog,
+  FAQItem,
+  TeamMember 
 } from '../types.js';
 
 // Only one admin user with password "admin123"
 const DEFAULT_PASSWORD_HASH = bcrypt.hashSync('admin123', 10);
 
-// Path to the JSON data file
+// Paths
 const DATA_FILE = path.join(process.cwd(), 'data.json');
 
 interface DatabaseData {
@@ -23,6 +27,10 @@ interface DatabaseData {
   gallery: GalleryItem[];
   adminUsers: AdminUser[];
   smsLogs: SmsLog[];
+  socialLinks: SocialLink[];
+  priceLogs: PriceLog[];
+  faqs: FAQItem[];
+  teamMembers: TeamMember[];  // Add this
 }
 
 class DatabaseStore {
@@ -32,6 +40,10 @@ class DatabaseStore {
   public gallery: GalleryItem[] = [];
   public adminUsers: AdminUser[] = [];
   public smsLogs: SmsLog[] = [];
+  public socialLinks: SocialLink[] = [];
+  public priceLogs: PriceLog[] = [];
+  public faqs: FAQItem[] = [];
+  public teamMembers: TeamMember[] = []; 
 
   constructor() {
     this.loadFromFile();
@@ -52,7 +64,11 @@ class DatabaseStore {
         this.gallery = data.gallery || [];
         this.adminUsers = data.adminUsers || [];
         this.smsLogs = data.smsLogs || [];
-        console.log(`📂 Loaded ${this.packages.length} packages, ${this.gallery.length} gallery items from data.json`);
+        this.socialLinks = data.socialLinks || [];
+        this.priceLogs = data.priceLogs || [];
+        this.faqs = data.faqs || [];
+        this.teamMembers = data.teamMembers || [];  // Add this
+        console.log(`📂 Loaded ${this.packages.length} packages, ${this.gallery.length} gallery items, ${this.faqs.length} FAQs, ${this.teamMembers.length} team members from data.json`);
       } else {
         console.log('📂 No data.json found, seeding defaults...');
         this.seedDefaults();
@@ -74,9 +90,13 @@ class DatabaseStore {
         gallery: this.gallery,
         adminUsers: this.adminUsers,
         smsLogs: this.smsLogs,
+        socialLinks: this.socialLinks,
+        priceLogs: this.priceLogs,
+        faqs: this.faqs,
+        teamMembers: this.teamMembers,  // Add this
       };
       fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-      console.log(`💾 Saved ${this.packages.length} packages, ${this.gallery.length} gallery items, ${this.adminUsers.length} users to data.json`);
+      console.log(`💾 Saved ${this.packages.length} packages, ${this.gallery.length} gallery items, ${this.faqs.length} FAQs, ${this.teamMembers.length} team members to data.json`);
     } catch (err) {
       console.error('❌ Error saving data file:', err);
     }
@@ -85,7 +105,19 @@ class DatabaseStore {
   private seedDefaults() {
     const now = new Date().toISOString();
 
-    // Packages – empty, user will add
+    // Default social links
+    this.socialLinks = [];
+
+    // Default price logs
+    this.priceLogs = [];
+
+    // Default FAQs 
+    this.faqs = [];
+
+    // Default Team Members
+    this.teamMembers = [];
+
+    //Default Packages 
     this.packages = [];
 
     // Subscribers (sample)
@@ -122,7 +154,7 @@ class DatabaseStore {
         phone: '+251922334455',
         email: 'mohammed.ahmed@example.com',
         subject: 'Inquiry regarding Ramadan Umrah 2026 Group Booking',
-        message: 'Assalamu Alaikum. We have a family group of 8 persons interested in the Premium Umrah package. Please advise on custom flight options.',
+        message: 'Assalamu Alaikum. We have a family group of 8 persons interested in the Premium Umrah package.',
         status: 'New',
         source: 'Contact Us Form',
         createdAt: now,
@@ -134,7 +166,7 @@ class DatabaseStore {
         phone: '+251911001122',
         email: 'fatima.z@example.com',
         subject: 'Visa requirement for family members',
-        message: 'Hello Delta Travel, I want to confirm if children under 12 need separate medical certificates for Umrah visa.',
+        message: 'Hello Delta Travel, I want to confirm if children under 12 need separate medical certificates.',
         status: 'Contacted',
         source: 'Package Page',
         createdAt: now,
@@ -142,10 +174,10 @@ class DatabaseStore {
       }
     ];
 
-    // Gallery – empty
+    // Gallery 
     this.gallery = [];
 
-    // Admin users - ONLY ONE: admin@deltatravel.com / admin123
+    // Admin users – only one
     this.adminUsers = [
       {
         id: 'usr-1',
@@ -174,19 +206,9 @@ class DatabaseStore {
     ];
   }
 
-  // Auto-save methods for each collection
+  // ===== ADD METHODS =====
   addPackage(pkg: TravelPackage) {
     this.packages.unshift(pkg);
-    this.saveToFile();
-  }
-
-  updatePackage(index: number, pkg: TravelPackage) {
-    this.packages[index] = pkg;
-    this.saveToFile();
-  }
-
-  deletePackage(index: number) {
-    this.packages.splice(index, 1);
     this.saveToFile();
   }
 
@@ -195,43 +217,13 @@ class DatabaseStore {
     this.saveToFile();
   }
 
-  updateGalleryItem(index: number, item: GalleryItem) {
-    this.gallery[index] = item;
-    this.saveToFile();
-  }
-
-  deleteGalleryItem(index: number) {
-    this.gallery.splice(index, 1);
-    this.saveToFile();
-  }
-
   addSubscriber(sub: Subscriber) {
     this.subscribers.unshift(sub);
     this.saveToFile();
   }
 
-  updateSubscriber(index: number, sub: Subscriber) {
-    this.subscribers[index] = sub;
-    this.saveToFile();
-  }
-
-  deleteSubscriber(index: number) {
-    this.subscribers.splice(index, 1);
-    this.saveToFile();
-  }
-
   addInquiry(inquiry: Inquiry) {
     this.inquiries.unshift(inquiry);
-    this.saveToFile();
-  }
-
-  updateInquiry(index: number, inquiry: Inquiry) {
-    this.inquiries[index] = inquiry;
-    this.saveToFile();
-  }
-
-  deleteInquiry(index: number) {
-    this.inquiries.splice(index, 1);
     this.saveToFile();
   }
 
@@ -241,8 +233,70 @@ class DatabaseStore {
   }
 
   addAdminUser(user: AdminUser) {
-    // Only allow if user doesn't already exist (but we won't call this from anywhere)
     this.adminUsers.push(user);
+    this.saveToFile();
+  }
+
+  addSocialLink(link: SocialLink) {
+    this.socialLinks.push(link);
+    this.saveToFile();
+  }
+
+  addPriceLog(log: PriceLog) {
+    this.priceLogs.unshift(log);
+    this.saveToFile();
+  }
+
+  // ===== FAQ METHODS =====
+  addFaq(faq: FAQItem) {
+    this.faqs.push(faq);
+    this.saveToFile();
+  }
+
+  updateFaq(index: number, faq: FAQItem) {
+    this.faqs[index] = faq;
+    this.saveToFile();
+  }
+
+  deleteFaq(index: number) {
+    this.faqs.splice(index, 1);
+    this.saveToFile();
+  }
+
+  // ===== TEAM MEMBER METHODS =====
+  addTeamMember(member: TeamMember) {
+    this.teamMembers.push(member);
+    this.saveToFile();
+  }
+
+  updateTeamMember(index: number, member: TeamMember) {
+    this.teamMembers[index] = member;
+    this.saveToFile();
+  }
+
+  deleteTeamMember(index: number) {
+    this.teamMembers.splice(index, 1);
+    this.saveToFile();
+  }
+
+  // ===== UPDATE METHODS =====
+  updatePackage(index: number, pkg: TravelPackage) {
+    this.packages[index] = pkg;
+    this.saveToFile();
+  }
+
+  updateGalleryItem(index: number, item: GalleryItem) {
+    this.gallery[index] = item;
+    this.saveToFile();
+  }
+
+  updateSubscriber(index: number, sub: Subscriber) {
+    this.subscribers[index] = sub;
+    this.saveToFile();
+  }
+
+  updateInquiry(index: number, inquiry: Inquiry) {
+    this.inquiries[index] = inquiry;
     this.saveToFile();
   }
 
@@ -251,8 +305,39 @@ class DatabaseStore {
     this.saveToFile();
   }
 
+  updateSocialLink(index: number, link: SocialLink) {
+    this.socialLinks[index] = link;
+    this.saveToFile();
+  }
+
+  // ===== DELETE METHODS =====
+  deletePackage(index: number) {
+    this.packages.splice(index, 1);
+    this.saveToFile();
+  }
+
+  deleteGalleryItem(index: number) {
+    this.gallery.splice(index, 1);
+    this.saveToFile();
+  }
+
+  deleteSubscriber(index: number) {
+    this.subscribers.splice(index, 1);
+    this.saveToFile();
+  }
+
+  deleteInquiry(index: number) {
+    this.inquiries.splice(index, 1);
+    this.saveToFile();
+  }
+
   deleteAdminUser(index: number) {
     this.adminUsers.splice(index, 1);
+    this.saveToFile();
+  }
+
+  deleteSocialLink(index: number) {
+    this.socialLinks.splice(index, 1);
     this.saveToFile();
   }
 }

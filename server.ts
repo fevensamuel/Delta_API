@@ -16,7 +16,7 @@ async function startServer() {
   // Initialize Exchange Rate Service
   initExchangeRateService();
 
-  // Security & Permissive CORS - UPDATED with all allowed origins
+  // Security & Permissive CORS
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) 
     : [
@@ -28,7 +28,7 @@ async function startServer() {
       'https://delta-travel-backend.onrender.com'
       ];
   
-  // CORS for API routes - UPDATED with better error logging
+  // CORS for API routes
   app.use(cors({
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
@@ -57,19 +57,21 @@ async function startServer() {
   const videosPath = path.join(uploadPath, 'videos');
   const imagesPath = path.join(uploadPath, 'images');
   const packagesPath = path.join(uploadPath, 'packages');
+  const teamPath = path.join(uploadPath, 'team');
 
   // Create all directories
-  [uploadPath, videosPath, imagesPath, packagesPath].forEach(dir => {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      console.log(`📁 Created directory: ${dir}`);
-    }
-  });
+[uploadPath, videosPath, imagesPath, packagesPath, teamPath].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`📁 Created directory: ${dir}`);
+  }
+});
 
   console.log('📁 Uploads directory:', uploadPath);
   console.log('📹 Videos directory:', videosPath);
   console.log('🖼️ Images directory:', imagesPath);
   console.log('📦 Packages directory:', packagesPath);
+  console.log('👤 Team directory:', teamPath);
 
   // ============================================================
   // CORS MIDDLEWARE FOR STATIC FILES
@@ -91,47 +93,69 @@ async function startServer() {
   
   // Main uploads folder
   app.use('/uploads', staticCors);
-  app.use('/uploads', express.static(uploadPath, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
-      else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
-      else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
-      else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
-  }));
+app.use('/uploads', express.static(uploadPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
+    else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
+    else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+    else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
-  // Images folder
-  app.use('/uploads/images', staticCors);
-  app.use('/uploads/images', express.static(imagesPath, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
-      else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
-      else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
-  }));
+// Images folder
+app.use('/uploads/images', staticCors);
+app.use('/uploads/images', express.static(imagesPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
+    else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+    else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
-  // Videos folder
-  app.use('/uploads/videos', staticCors);
-  app.use('/uploads/videos', express.static(videosPath, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
-      else if (filePath.endsWith('.webm')) res.setHeader('Content-Type', 'video/webm');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
-  }));
+// Videos folder
+app.use('/uploads/videos', staticCors);
+app.use('/uploads/videos', express.static(videosPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
+    else if (filePath.endsWith('.webm')) res.setHeader('Content-Type', 'video/webm');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
-  // Packages folder
-  app.use('/uploads/packages', staticCors);
-  app.use('/uploads/packages', express.static(packagesPath, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
-      else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
-      else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
-  }));
+// Packages folder
+app.use('/uploads/packages', staticCors);
+app.use('/uploads/packages', express.static(packagesPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
+    else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+    else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+
+// Team folder - ADD THIS
+app.use('/uploads/team', staticCors);
+app.use('/uploads/team', express.static(teamPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
+    else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+    else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+
+  //Logo
+app.use('/uploads', staticCors);
+app.use('/uploads', express.static(uploadPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+    else if (filePath.endsWith('.svg')) res.setHeader('Content-Type', 'image/svg+xml');
+    else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
   // ============================================================
   // MULTER CONFIGURATION
@@ -199,6 +223,9 @@ async function startServer() {
           "POST /api/subscribers",
           "POST /api/inquiries",
           "GET /api/exchange-rate",
+          "GET /api/faqs",
+          "GET /api/social-links",
+          "GET /api/team-members",
           "GET /api/health"
         ],
         auth: [
@@ -229,7 +256,19 @@ async function startServer() {
           "DELETE /api/admin/users/:id",
           "GET /api/admin/exchange-rate",
           "POST /api/admin/exchange-rate",
-          "GET /api/admin/dashboard/stats"
+          "GET /api/admin/dashboard/stats",
+          "GET /api/admin/faqs",
+          "POST /api/admin/faqs",
+          "PUT /api/admin/faqs/:id",
+          "DELETE /api/admin/faqs/:id",
+          "GET /api/admin/social-links",
+          "POST /api/admin/social-links",
+          "PUT /api/admin/social-links/:id",
+          "DELETE /api/admin/social-links/:id",
+          "GET /api/admin/team-members",
+          "POST /api/admin/team-members",
+          "PUT /api/admin/team-members/:id",
+          "DELETE /api/admin/team-members/:id"
         ]
       }
     });
@@ -287,6 +326,7 @@ async function startServer() {
     console.log(`📹 Videos directory: ${videosPath}`);
     console.log(`🖼️ Images directory: ${imagesPath}`);
     console.log(`📦 Packages directory: ${packagesPath}`);
+    console.log(`👤 Team directory: ${teamPath}`);
     console.log(`=======================================================`);
   });
 }

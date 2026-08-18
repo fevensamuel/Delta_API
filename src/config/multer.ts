@@ -7,19 +7,23 @@ const uploadPath = path.resolve(process.env.UPLOAD_PATH || './uploads');
 const videosPath = path.join(uploadPath, 'videos');
 const imagesPath = path.join(uploadPath, 'images');
 const packagesPath = path.join(uploadPath, 'packages');
+const teamPath = path.join(uploadPath, 'team'); // Make sure this exists
 
 // Ensure directories exist
-[videosPath, imagesPath, packagesPath].forEach(dir => {
+[videosPath, imagesPath, packagesPath, teamPath].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 });
 
-// Configure storage - using mimetype to determine destination
+// Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Check the file's mimetype to determine where to save
-    if (file.mimetype.startsWith('video/')) {
+    // Check if it's a team member image
+    if (req.path && req.path.includes('/team')) {
+      console.log(`👤 Saving team image to: ${teamPath}`);
+      cb(null, teamPath);
+    } else if (file.mimetype.startsWith('video/')) {
       console.log(`🎬 Saving video to: ${videosPath}`);
       cb(null, videosPath);
     } else if (file.mimetype.startsWith('image/')) {
@@ -54,13 +58,15 @@ export const upload = multer({
   }
 });
 
-// Export upload fields for different use cases
+// Export upload fields
 export const galleryUploadFields = upload.fields([
   { name: 'image', maxCount: 1 },
   { name: 'video', maxCount: 1 }
 ]);
 
-export const packageUpload = upload.single('packageImage'); // kept for backward compatibility but no longer used directly
+export const teamUpload = upload.single('image');
+
+export const packageUpload = upload.single('packageImage');
 
 export const bulkUpload = upload.array('files', 50);
 
@@ -69,5 +75,6 @@ export const uploadPaths = {
   uploadPath,
   videosPath,
   imagesPath,
-  packagesPath
+  packagesPath,
+  teamPath 
 };
