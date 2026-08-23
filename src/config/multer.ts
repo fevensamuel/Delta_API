@@ -7,10 +7,11 @@ const uploadPath = path.resolve(process.env.UPLOAD_PATH || './uploads');
 const videosPath = path.join(uploadPath, 'videos');
 const imagesPath = path.join(uploadPath, 'images');
 const packagesPath = path.join(uploadPath, 'packages');
-const teamPath = path.join(uploadPath, 'team'); // Make sure this exists
+const teamPath = path.join(uploadPath, 'team');
+const officePath = path.join(uploadPath, 'office'); 
 
 // Ensure directories exist
-[videosPath, imagesPath, packagesPath, teamPath].forEach(dir => {
+[videosPath, imagesPath, packagesPath, teamPath, officePath].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -23,13 +24,21 @@ const storage = multer.diskStorage({
     if (req.path && req.path.includes('/team')) {
       console.log(`👤 Saving team image to: ${teamPath}`);
       cb(null, teamPath);
-    } else if (file.mimetype.startsWith('video/')) {
+    } 
+    // Check if it's an office image
+    else if (req.path && req.path.includes('/office')) {
+      console.log(`🏢 Saving office image to: ${officePath}`);
+      cb(null, officePath);
+    } 
+    else if (file.mimetype.startsWith('video/')) {
       console.log(`🎬 Saving video to: ${videosPath}`);
       cb(null, videosPath);
-    } else if (file.mimetype.startsWith('image/')) {
+    } 
+    else if (file.mimetype.startsWith('image/')) {
       console.log(`🖼️ Saving image to: ${imagesPath}`);
       cb(null, imagesPath);
-    } else {
+    } 
+    else {
       console.log(`📁 Saving to default: ${imagesPath}`);
       cb(null, imagesPath);
     }
@@ -70,11 +79,14 @@ export const packageUpload = upload.single('packageImage');
 
 export const bulkUpload = upload.array('files', 50);
 
+export const officeUpload = upload.single('image');
+
 // Export paths for use in routes
 export const uploadPaths = {
   uploadPath,
   videosPath,
   imagesPath,
   packagesPath,
-  teamPath 
+  teamPath,
+  officePath 
 };

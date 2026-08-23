@@ -7,7 +7,7 @@ import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
 import { db } from './db.js';
 import { getExchangeRate, setAdminOverrideRate } from '../services/exchangeRateService.js';
-import { upload, galleryUploadFields, bulkUpload, uploadPaths, teamUpload } from '../config/multer.js';
+import { upload, galleryUploadFields, bulkUpload, uploadPaths, teamUpload, officeUpload } from '../config/multer.js';
 import { authenticateJWT, AuthenticatedRequest } from './middleware.js';
 import type {
   AdminRole,
@@ -18,7 +18,9 @@ import type {
   SocialLink,
   PriceLog,
   FAQItem,
-  TeamMember
+  TeamMember,
+  OfficeImage,
+  Testimonial
 } from '../types.js';
 
 export const apiRouter = Router();
@@ -420,10 +422,26 @@ apiRouter.delete('/admin/faqs/:id', authenticateJWT, (req: Request, res: Respons
 // PRICE LOGS
 // ============================================================
 apiRouter.get('/admin/price-logs', authenticateJWT, (req: Request, res: Response) => {
+  const sortedLogs = [...db.priceLogs].sort((a, b) => 
+    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  
+  // Get package titles for context
+  const logsWithDetails = sortedLogs.map(log => {
+    const pkg = db.packages.find(p => p.id === log.packageId);
+    return {
+      ...log,
+      packageTitle: pkg ? pkg.titleEn : 'Unknown Package',
+      packageCategory: pkg ? pkg.category : 'Unknown',
+      packageIsActive: pkg ? pkg.isActive : false
+    };
+  });
+  
   res.json({
     status: 'success',
     success: true,
-    data: db.priceLogs
+    count: logsWithDetails.length,
+    data: logsWithDetails
   });
 });
 
@@ -458,13 +476,17 @@ apiRouter.post('/admin/price-logs', authenticateJWT, (req: Request, res: Respons
 });
 
 // ============================================================
-// PACKAGES (with editable multi-currency and price log)
+// PACKAGES
 // ============================================================
+
+// PUBLIC - Get all active packages (ONLY isActive: true)
 apiRouter.get('/packages', async (req: Request, res: Response) => {
   try {
     const rateData = await getExchangeRate();
     const rate = rateData.rate;
-    const packagesList = db.packages.filter(p => p.isActive);
+    // ONLY show packages where isActive === true
+    const packagesList = db.packages.filter(p => p.isActive === true);
+    
     const data = packagesList.map(pkg => ({
       id: String(pkg.id),
       titleEn: pkg.titleEn,
@@ -474,6 +496,14 @@ apiRouter.get('/packages', async (req: Request, res: Response) => {
       priceUsd: pkg.priceUsd,
       priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
       priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
+      priceType: pkg.priceType || 'single',
+      priceUsdMin: pkg.priceUsdMin || null,
+      priceUsdMax: pkg.priceUsdMax || null,
+      priceEtbMin: pkg.priceEtbMin || null,
+      priceEtbMax: pkg.priceEtbMax || null,
+      priceSarMin: pkg.priceSarMin || null,
+      priceSarMax: pkg.priceSarMax || null,
+      discounts: pkg.discounts || [],
       durationDays: pkg.durationDays,
       departureCity: pkg.departureCity || 'Addis Ababa',
       inclusions: pkg.inclusions || [],
@@ -485,6 +515,7 @@ apiRouter.get('/packages', async (req: Request, res: Response) => {
       createdAt: pkg.createdAt,
       updatedAt: pkg.updatedAt
     }));
+    
     res.json({
       status: 'success',
       success: true,
@@ -492,16 +523,102 @@ apiRouter.get('/packages', async (req: Request, res: Response) => {
       data
     });
   } catch (err: any) {
+    console.error('❌ Error fetching packages:', err);
     res.status(500).json({ status: 'error', success: false, error: err.message });
   }
 });
 
-// GET all packages (admin)
+// PUBLIC - Get single package
+apiRouter.get('/packages/:id', async (req: Request, res: Response) => {
+  try {
+    const pkg = db.packages.find(p => String(p.id) === String(req.params.id));
+    if (!pkg || pkg.isActive === false) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Package not found' });
+    }
+    
+    const rateData = await getExchangeRate();
+    const rate = rateData.rate;
+    
+    const data = {
+      id: String(pkg.id),
+      titleEn: pkg.titleEn,
+      titleAr: pkg.titleAr,
+      titleAm: pkg.titleAm || '',
+      category: pkg.category,
+      priceUsd: pkg.priceUsd,
+      priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
+      priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
+      priceType: pkg.priceType || 'single',
+      priceUsdMin: pkg.priceUsdMin || null,
+      priceUsdMax: pkg.priceUsdMax || null,
+      priceEtbMin: pkg.priceEtbMin || null,
+      priceEtbMax: pkg.priceEtbMax || null,
+      priceSarMin: pkg.priceSarMin || null,
+      priceSarMax: pkg.priceSarMax || null,
+      discounts: pkg.discounts || [],
+      durationDays: pkg.durationDays,
+      departureCity: pkg.departureCity || 'Addis Ababa',
+      inclusions: pkg.inclusions || [],
+      availableDates: pkg.availableDates || [],
+      itinerary: pkg.itinerary || [],
+      imageUrl: pkg.imageUrl,
+      isActive: pkg.isActive,
+      whatsappClicks: pkg.whatsappClicks || 0,
+      createdAt: pkg.createdAt,
+      updatedAt: pkg.updatedAt
+    };
+    
+    res.json({
+      status: 'success',
+      success: true,
+      data
+    });
+  } catch (err: any) {
+    console.error('❌ Error fetching package:', err);
+    res.status(500).json({ status: 'error', success: false, error: err.message });
+  }
+});
+
+// PUBLIC - Track WhatsApp click
+apiRouter.post('/packages/:id/click-whatsapp', async (req: Request, res: Response) => {
+  try {
+    const index = db.packages.findIndex(p => String(p.id) === String(req.params.id));
+    if (index === -1) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Package not found' });
+    }
+    
+    const pkg = db.packages[index];
+    const updatedPkg = {
+      ...pkg,
+      whatsappClicks: (pkg.whatsappClicks || 0) + 1,
+      updatedAt: new Date().toISOString()
+    };
+    
+    db.updatePackage(index, updatedPkg);
+    
+    res.json({
+      status: 'success',
+      success: true,
+      message: 'WhatsApp click tracked',
+      data: { whatsappClicks: updatedPkg.whatsappClicks }
+    });
+  } catch (err: any) {
+    console.error('❌ Error tracking WhatsApp click:', err);
+    res.status(500).json({ status: 'error', success: false, error: err.message });
+  }
+});
+
+// ============================================================
+// ADMIN PACKAGES
+// ============================================================
+
+// ADMIN - Get all packages
 apiRouter.get('/admin/packages', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const rateData = await getExchangeRate();
     const rate = rateData.rate;
     const packagesList = db.packages;
+    
     const data = packagesList.map(pkg => ({
       id: String(pkg.id),
       titleEn: pkg.titleEn,
@@ -511,6 +628,14 @@ apiRouter.get('/admin/packages', authenticateJWT, async (req: Request, res: Resp
       priceUsd: pkg.priceUsd,
       priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
       priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
+      priceType: pkg.priceType || 'single',
+      priceUsdMin: pkg.priceUsdMin || null,
+      priceUsdMax: pkg.priceUsdMax || null,
+      priceEtbMin: pkg.priceEtbMin || null,
+      priceEtbMax: pkg.priceEtbMax || null,
+      priceSarMin: pkg.priceSarMin || null,
+      priceSarMax: pkg.priceSarMax || null,
+      discounts: pkg.discounts || [],
       durationDays: pkg.durationDays,
       departureCity: pkg.departureCity || 'Addis Ababa',
       inclusions: pkg.inclusions || [],
@@ -522,6 +647,7 @@ apiRouter.get('/admin/packages', authenticateJWT, async (req: Request, res: Resp
       createdAt: pkg.createdAt,
       updatedAt: pkg.updatedAt
     }));
+    
     res.json({
       status: 'success',
       success: true,
@@ -529,11 +655,63 @@ apiRouter.get('/admin/packages', authenticateJWT, async (req: Request, res: Resp
       data
     });
   } catch (err: any) {
+    console.error('❌ Error fetching admin packages:', err);
     res.status(500).json({ status: 'error', success: false, error: err.message });
   }
 });
 
-// CREATE PACKAGE
+// ADMIN - Get single package by ID
+apiRouter.get('/admin/packages/:id', authenticateJWT, async (req: Request, res: Response) => {
+  try {
+    const pkg = db.packages.find(p => String(p.id) === String(req.params.id));
+    if (!pkg) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Package not found' });
+    }
+    
+    const rateData = await getExchangeRate();
+    const rate = rateData.rate;
+    
+    const data = {
+      id: String(pkg.id),
+      titleEn: pkg.titleEn,
+      titleAr: pkg.titleAr,
+      titleAm: pkg.titleAm || '',
+      category: pkg.category,
+      priceUsd: pkg.priceUsd,
+      priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
+      priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
+      priceType: pkg.priceType || 'single',
+      priceUsdMin: pkg.priceUsdMin || null,
+      priceUsdMax: pkg.priceUsdMax || null,
+      priceEtbMin: pkg.priceEtbMin || null,
+      priceEtbMax: pkg.priceEtbMax || null,
+      priceSarMin: pkg.priceSarMin || null,
+      priceSarMax: pkg.priceSarMax || null,
+      discounts: pkg.discounts || [],
+      durationDays: pkg.durationDays,
+      departureCity: pkg.departureCity || 'Addis Ababa',
+      inclusions: pkg.inclusions || [],
+      availableDates: pkg.availableDates || [],
+      itinerary: pkg.itinerary || [],
+      imageUrl: pkg.imageUrl,
+      isActive: pkg.isActive,
+      whatsappClicks: pkg.whatsappClicks || 0,
+      createdAt: pkg.createdAt,
+      updatedAt: pkg.updatedAt
+    };
+    
+    res.json({
+      status: 'success',
+      success: true,
+      data
+    });
+  } catch (err: any) {
+    console.error('❌ Error fetching package:', err);
+    res.status(500).json({ status: 'error', success: false, error: err.message });
+  }
+});
+
+// ADMIN - CREATE PACKAGE
 apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response) => {
   packageUploadMiddleware(req, res, async (err: any) => {
     if (err) {
@@ -544,13 +722,17 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
       const {
         titleEn, titleAr, titleAm, category,
         priceUsd, priceEtb, priceSar,
+        priceType,
+        priceUsdMin, priceUsdMax, priceEtbMin, priceEtbMax, priceSarMin, priceSarMax,
+        discounts,
         durationDays, departureCity,
         inclusions, availableDates, itinerary, isActive
       } = req.body;
 
-      const parsedInclusions = typeof inclusions === 'string' ? JSON.parse(inclusions) : inclusions;
-      const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : availableDates;
-      const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : itinerary;
+      const parsedInclusions = typeof inclusions === 'string' ? JSON.parse(inclusions) : (inclusions || []);
+      const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : (availableDates || []);
+      const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : (itinerary || []);
+      const parsedDiscounts = typeof discounts === 'string' ? JSON.parse(discounts) : (discounts || []);
 
       const file = (req as any).file;
       let imageUrl = '';
@@ -561,28 +743,48 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         imageUrl = req.body.imageUrl;
       }
 
-      // Validation
-      if (!titleEn || !titleEn.trim()) return res.status(400).json({ status: 'error', success: false, error: 'English Title is required.' });
-      if (!category) return res.status(400).json({ status: 'error', success: false, error: 'Category is required.' });
-      if (!priceUsd || Number(priceUsd) <= 0) return res.status(400).json({ status: 'error', success: false, error: 'Valid USD price is required.' });
-      if (!durationDays || Number(durationDays) <= 0) return res.status(400).json({ status: 'error', success: false, error: 'Duration must be at least 1 day.' });
-      if (!imageUrl) return res.status(400).json({ status: 'error', success: false, error: 'Image is required.' });
+      if (!titleEn || !titleEn.trim()) {
+        return res.status(400).json({ status: 'error', success: false, error: 'English Title is required.' });
+      }
+      if (!category) {
+        return res.status(400).json({ status: 'error', success: false, error: 'Category is required.' });
+      }
+      if (!priceUsd || Number(priceUsd) <= 0) {
+        return res.status(400).json({ status: 'error', success: false, error: 'Valid USD price is required.' });
+      }
+      if (!durationDays || Number(durationDays) <= 0) {
+        return res.status(400).json({ status: 'error', success: false, error: 'Duration must be at least 1 day.' });
+      }
+      if (!imageUrl) {
+        return res.status(400).json({ status: 'error', success: false, error: 'Image is required.' });
+      }
 
       const validCategories: PackageCategory[] = ['Economy', 'Standard', 'Premium', 'VIP'];
       if (!validCategories.includes(category as PackageCategory)) {
-        return res.status(400).json({ status: 'error', success: false, error: `Invalid category. Must be one of: ${validCategories.join(', ')}` });
+        return res.status(400).json({ 
+          status: 'error', 
+          success: false, 
+          error: `Invalid category. Must be one of: ${validCategories.join(', ')}` 
+        });
       }
 
+      const validPriceTypes: PriceType[] = ['single', 'range'];
+      const finalPriceType = (priceType && validPriceTypes.includes(priceType)) ? priceType : 'single';
+
       const now = new Date().toISOString();
-      const newPkg = {
+      const priceUsdNum = Number(priceUsd);
+      const rate = 159.98;
+
+      const newPkg: any = {
         id: `pkg-${Date.now()}`,
         titleEn: titleEn.trim(),
         titleAr: (titleAr || '').trim(),
         titleAm: (titleAm || '').trim(),
         category: category as PackageCategory,
-        priceUsd: Number(priceUsd),
-        priceEtb: priceEtb ? Number(priceEtb) : Math.round(Number(priceUsd) * 159.98),
-        priceSar: priceSar ? Number(priceSar) : Math.round(Number(priceUsd) * 3.75),
+        priceUsd: priceUsdNum,
+        priceEtb: priceEtb ? Number(priceEtb) : Math.round(priceUsdNum * rate),
+        priceSar: priceSar ? Number(priceSar) : Math.round(priceUsdNum * 3.75),
+        priceType: finalPriceType,
         durationDays: Number(durationDays),
         departureCity: departureCity || 'Addis Ababa',
         inclusions: Array.isArray(parsedInclusions) ? parsedInclusions : [],
@@ -590,14 +792,31 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         itinerary: Array.isArray(parsedItinerary) ? parsedItinerary : [],
         imageUrl: imageUrl.trim(),
         isActive: isActive !== undefined ? Boolean(isActive) : true,
+        status: isActive !== undefined ? (Boolean(isActive) ? 'Active' : 'Inactive') : 'Active',
         whatsappClicks: 0,
         createdAt: now,
         updatedAt: now
       };
 
+      if (finalPriceType === 'range') {
+        newPkg.priceUsdMin = priceUsdMin ? Number(priceUsdMin) : priceUsdNum;
+        newPkg.priceUsdMax = priceUsdMax ? Number(priceUsdMax) : priceUsdNum;
+        newPkg.priceEtbMin = priceEtbMin ? Number(priceEtbMin) : Math.round(priceUsdNum * rate);
+        newPkg.priceEtbMax = priceEtbMax ? Number(priceEtbMax) : Math.round(priceUsdNum * rate);
+        newPkg.priceSarMin = priceSarMin ? Number(priceSarMin) : Math.round(priceUsdNum * 3.75);
+        newPkg.priceSarMax = priceSarMax ? Number(priceSarMax) : Math.round(priceUsdNum * 3.75);
+      }
+
+      if (Array.isArray(parsedDiscounts) && parsedDiscounts.length > 0) {
+        newPkg.discounts = parsedDiscounts.map((d: any) => ({
+          ...d,
+          id: d.id || `disc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          isActive: d.isActive !== undefined ? d.isActive : true
+        }));
+      }
+
       db.addPackage(newPkg);
 
-      // Create initial price log
       const log: PriceLog = {
         id: `pl-${Date.now()}`,
         packageId: newPkg.id,
@@ -620,13 +839,18 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         data: newPkg
       });
     } catch (err: any) {
-      console.error('Error creating package:', err);
-      res.status(500).json({ status: 'error', success: false, error: 'Something went wrong while creating the package.' });
+      console.error('❌ Error creating package:', err);
+      res.status(500).json({ 
+        status: 'error', 
+        success: false, 
+        error: 'Something went wrong while creating the package.',
+        details: err.message 
+      });
     }
   });
 });
 
-// UPDATE PACKAGE
+// ADMIN - UPDATE PACKAGE
 apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Response) => {
   packageUploadMiddleware(req, res, async (err: any) => {
     if (err) {
@@ -643,8 +867,12 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
       const {
         titleEn, titleAr, titleAm, category,
         priceUsd, priceEtb, priceSar,
+        priceType,
+        priceUsdMin, priceUsdMax, priceEtbMin, priceEtbMax, priceSarMin, priceSarMax,
+        discounts,
         durationDays, departureCity,
-        inclusions, availableDates, itinerary, isActive
+        inclusions, availableDates, itinerary, isActive,
+        reason
       } = req.body;
 
       const file = (req as any).file;
@@ -657,52 +885,101 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
       }
 
       if (category && !['Economy', 'Standard', 'Premium', 'VIP'].includes(category)) {
-        return res.status(400).json({ status: 'error', success: false, error: 'Invalid category. Must be Economy, Standard, Premium, or VIP.' });
+        return res.status(400).json({ 
+          status: 'error', 
+          success: false, 
+          error: 'Invalid category. Must be Economy, Standard, Premium, or VIP.' 
+        });
       }
 
-      // Track price changes for logging
-      const priceUsdNew = priceUsd !== undefined ? Number(priceUsd) : existing.priceUsd;
-      const priceEtbNew = priceEtb !== undefined ? Number(priceEtb) : existing.priceEtb;
-      const priceSarNew = priceSar !== undefined ? Number(priceSar) : existing.priceSar;
+      const validPriceTypes: PriceType[] = ['single', 'range'];
+      const finalPriceType = (priceType && validPriceTypes.includes(priceType)) ? priceType : (existing.priceType || 'single');
 
-      const updatedPkg = {
+      const parsedInclusions = typeof inclusions === 'string' ? JSON.parse(inclusions) : (inclusions !== undefined ? inclusions : existing.inclusions);
+      const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : (availableDates !== undefined ? availableDates : existing.availableDates);
+      const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : (itinerary !== undefined ? itinerary : existing.itinerary);
+      const parsedDiscounts = typeof discounts === 'string' ? JSON.parse(discounts) : (discounts !== undefined ? discounts : existing.discounts);
+
+      const rate = 159.98;
+      
+      // Get the price values - use existing if not provided
+      let priceUsdNew = priceUsd !== undefined ? Number(priceUsd) : existing.priceUsd;
+      let priceEtbNew = priceEtb !== undefined ? Number(priceEtb) : (existing.priceEtb || Math.round(priceUsdNew * rate));
+      let priceSarNew = priceSar !== undefined ? Number(priceSar) : (existing.priceSar || Math.round(priceUsdNew * 3.75));
+
+      // Build updated package - PRESERVE all existing data
+      const updatedPkg: any = {
         ...existing,
-        titleEn: titleEn !== undefined ? titleEn : existing.titleEn,
-        titleAr: titleAr !== undefined ? titleAr : existing.titleAr,
-        titleAm: titleAm !== undefined ? titleAm : existing.titleAm,
+        titleEn: titleEn !== undefined ? titleEn.trim() : existing.titleEn,
+        titleAr: titleAr !== undefined ? titleAr.trim() : existing.titleAr,
+        titleAm: titleAm !== undefined ? titleAm.trim() : existing.titleAm,
         category: category ? (category as PackageCategory) : existing.category,
         priceUsd: priceUsdNew,
         priceEtb: priceEtbNew,
         priceSar: priceSarNew,
+        priceType: finalPriceType,
         durationDays: durationDays !== undefined ? Number(durationDays) : existing.durationDays,
         departureCity: departureCity !== undefined ? departureCity : existing.departureCity,
-        inclusions: inclusions !== undefined ? inclusions : existing.inclusions,
-        availableDates: availableDates !== undefined ? availableDates : existing.availableDates,
-        itinerary: itinerary !== undefined ? itinerary : existing.itinerary,
+        inclusions: Array.isArray(parsedInclusions) ? parsedInclusions : [],
+        availableDates: Array.isArray(parsedAvailableDates) ? parsedAvailableDates : [],
+        itinerary: Array.isArray(parsedItinerary) ? parsedItinerary : [],
         imageUrl: imageUrl,
         isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
+        status: isActive !== undefined ? (Boolean(isActive) ? 'Active' : 'Inactive') : existing.status,
         updatedAt: new Date().toISOString()
       };
 
-      // Check if prices changed and log
-      if (priceUsdNew !== existing.priceUsd || priceEtbNew !== existing.priceEtb || priceSarNew !== existing.priceSar) {
-        const log: PriceLog = {
-          id: `pl-${Date.now()}`,
-          packageId: existing.id,
-          priceUsd: priceUsdNew,
-          priceEtb: priceEtbNew,
-          priceSar: priceSarNew,
-          previousPriceUsd: existing.priceUsd,
-          previousPriceEtb: existing.priceEtb,
-          previousPriceSar: existing.priceSar,
-          reason: req.body.reason || 'Price update',
-          updatedBy: 'Admin',
-          updatedAt: new Date().toISOString()
-        };
-        db.addPriceLog(log);
+      // Handle price range - support switching between single and range
+      if (finalPriceType === 'range') {
+        // When switching to range, use the provided min/max or fallback to current price
+        const minUsd = priceUsdMin !== undefined ? Number(priceUsdMin) : priceUsdNew;
+        const maxUsd = priceUsdMax !== undefined ? Number(priceUsdMax) : priceUsdNew;
+        
+        updatedPkg.priceUsdMin = minUsd;
+        updatedPkg.priceUsdMax = maxUsd;
+        updatedPkg.priceEtbMin = priceEtbMin !== undefined ? Number(priceEtbMin) : Math.round(minUsd * rate);
+        updatedPkg.priceEtbMax = priceEtbMax !== undefined ? Number(priceEtbMax) : Math.round(maxUsd * rate);
+        updatedPkg.priceSarMin = priceSarMin !== undefined ? Number(priceSarMin) : Math.round(minUsd * 3.75);
+        updatedPkg.priceSarMax = priceSarMax !== undefined ? Number(priceSarMax) : Math.round(maxUsd * 3.75);
+        
+        // Also update the main priceUsd to the min value for display purposes
+        updatedPkg.priceUsd = minUsd;
+        updatedPkg.priceEtb = Math.round(minUsd * rate);
+        updatedPkg.priceSar = Math.round(minUsd * 3.75);
+      } else {
+        // Switching to single - use the provided price or existing
+        const singleUsd = priceUsd !== undefined ? Number(priceUsd) : (existing.priceUsd || 0);
+        updatedPkg.priceUsd = singleUsd;
+        updatedPkg.priceEtb = priceEtb !== undefined ? Number(priceEtb) : Math.round(singleUsd * rate);
+        updatedPkg.priceSar = priceSar !== undefined ? Number(priceSar) : Math.round(singleUsd * 3.75);
+        
+        // Remove range fields
+        delete updatedPkg.priceUsdMin;
+        delete updatedPkg.priceUsdMax;
+        delete updatedPkg.priceEtbMin;
+        delete updatedPkg.priceEtbMax;
+        delete updatedPkg.priceSarMin;
+        delete updatedPkg.priceSarMax;
       }
 
-      db.updatePackage(index, updatedPkg);
+      if (discounts !== undefined) {
+        updatedPkg.discounts = Array.isArray(parsedDiscounts) ? parsedDiscounts : [];
+      } else if (existing.discounts) {
+        updatedPkg.discounts = existing.discounts;
+      }
+
+      // Check if prices changed for logging
+      const priceChanged = updatedPkg.priceUsd !== existing.priceUsd || 
+                          updatedPkg.priceEtb !== existing.priceEtb || 
+                          updatedPkg.priceSar !== existing.priceSar;
+
+      // Save the reason for the price log
+      const updateReason = reason || (priceChanged ? 'Price updated via admin' : 'Package details updated');
+
+      // Update the package with the reason
+      db.updatePackage(index, updatedPkg, updateReason);
+      console.log(`✅ Package ${existing.id} updated successfully`);
+
       res.json({
         status: 'success',
         success: true,
@@ -710,19 +987,58 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
         data: updatedPkg
       });
     } catch (err: any) {
-      console.error('Error updating package:', err);
-      res.status(500).json({ status: 'error', success: false, error: 'Something went wrong while updating the package.' });
+      console.error('❌ Error updating package:', err);
+      res.status(500).json({ 
+        status: 'error', 
+        success: false, 
+        error: 'Something went wrong while updating the package.',
+        details: err.message 
+      });
     }
   });
 });
 
+// ADMIN - DELETE PACKAGE
 apiRouter.delete('/admin/packages/:id', authenticateJWT, (req: Request, res: Response) => {
   const index = db.packages.findIndex(p => String(p.id) === String(req.params.id));
   if (index === -1) {
     return res.status(404).json({ status: 'error', success: false, error: 'Package not found' });
   }
+  
+  const pkg = db.packages[index];
   db.deletePackage(index);
-  res.json({ status: 'success', success: true, message: 'Package deleted successfully' });
+  console.log(`🗑️ Package ${pkg.id} (${pkg.titleEn}) deleted`);
+  
+  res.json({ 
+    status: 'success', 
+    success: true, 
+    message: 'Package deleted successfully' 
+  });
+});
+
+// ADMIN - Get price logs with full details
+apiRouter.get('/admin/price-logs', authenticateJWT, (req: Request, res: Response) => {
+  const sortedLogs = [...db.priceLogs].sort((a, b) => 
+    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  
+  // Get package titles for context
+  const logsWithDetails = sortedLogs.map(log => {
+    const pkg = db.packages.find(p => p.id === log.packageId);
+    return {
+      ...log,
+      packageTitle: pkg ? pkg.titleEn : log.packageTitle || 'Unknown Package',
+      packageCategory: pkg ? pkg.category : 'Unknown',
+      packageIsActive: pkg ? pkg.isActive : false
+    };
+  });
+  
+  res.json({
+    status: 'success',
+    success: true,
+    count: logsWithDetails.length,
+    data: logsWithDetails
+  });
 });
 
 // ============================================================
@@ -846,401 +1162,6 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
     res.status(500).json({ status: 'error', success: false, error: 'Failed to create gallery item.' });
   }
 });
-
-// ===== BULK GALLERY UPLOAD =====
-apiRouter.post('/admin/gallery/bulk', authenticateJWT, bulkUpload, async (req: Request, res: Response) => {
-  try {
-    console.log('📤 Bulk upload request received');
-    const files = (req.files as Express.Multer.File[]) || [];
-    console.log(`📁 Files received: ${files.length}`);
-
-    let rawItems = req.body.items;
-    if (typeof rawItems === 'string') {
-      try {
-        rawItems = JSON.parse(rawItems);
-      } catch (e) {
-        return res.status(400).json({ status: 'error', success: false, error: 'Invalid JSON in items field' });
-      }
-    }
-
-    if (!Array.isArray(rawItems) || rawItems.length === 0) {
-      return res.status(400).json({
-        status: 'error',
-        success: false,
-        error: 'Request body must contain an "items" array with gallery item definitions'
-      });
-    }
-
-    const createdItems: GalleryItem[] = [];
-
-    for (let i = 0; i < rawItems.length; i++) {
-      const rawItem = rawItems[i];
-      let imageUrl = rawItem.imageUrl || rawItem.image_url || '';
-      let videoUrl = rawItem.videoUrl || rawItem.video_url || '';
-      let thumbnailUrl = '';
-
-      if (files[i]) {
-        const file = files[i];
-        if (file.mimetype.startsWith('video/')) {
-          videoUrl = `/uploads/videos/${file.filename}`;
-          imageUrl = '';
-          console.log(`🎬 Video file ${i+1}: ${file.originalname} -> ${videoUrl}`);
-
-          // Generate thumbnail
-          const videoPath = path.join(uploadPaths.videosPath, file.filename);
-          const thumbnailFilename = `thumb-${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
-          try {
-            await new Promise((resolve, reject) => {
-              ffmpeg(videoPath)
-                .screenshots({
-                  timestamps: [1],
-                  filename: thumbnailFilename,
-                  folder: uploadPaths.imagesPath,
-                  size: '320x180'
-                })
-                .on('end', resolve)
-                .on('error', reject);
-            });
-            thumbnailUrl = `/uploads/images/${thumbnailFilename}`;
-            imageUrl = thumbnailUrl;
-            console.log(`🎬 Thumbnail generated for bulk item ${i+1}: ${thumbnailFilename}`);
-          } catch (ffmpegErr) {
-            console.error('❌ Failed to generate thumbnail for bulk video:', ffmpegErr);
-          }
-        } else {
-          imageUrl = `/uploads/images/${file.filename}`;
-          console.log(`🖼️ Image file ${i+1}: ${file.originalname} -> ${imageUrl}`);
-        }
-      }
-
-      const isVideo = rawItem.type === 'video' || (files[i] && files[i].mimetype.startsWith('video/'));
-      if (!isVideo && !imageUrl) {
-        console.warn(`⚠️ Skipping item ${i} because no image file or URL provided.`);
-        continue;
-      }
-      if (isVideo && !videoUrl) {
-        console.warn(`⚠️ Skipping item ${i} because no video file or URL provided.`);
-        continue;
-      }
-
-      const now = new Date().toISOString();
-      const newItem: GalleryItem = {
-        id: `gal-bulk-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
-        type: isVideo ? 'video' : 'photo',
-        titleEn: rawItem.titleEn || rawItem.title_en || rawItem.title || 'Untitled',
-        titleAr: rawItem.titleAr || rawItem.title_ar || '',
-        imageUrl: imageUrl || '',
-        thumbnailUrl: thumbnailUrl || imageUrl || '',
-        videoUrl: videoUrl || '',
-        duration: rawItem.duration || '',
-        location: rawItem.location || 'Makkah Al-Mukarramah',
-        description: rawItem.description || '',
-        isActive: rawItem.isActive !== undefined ? Boolean(rawItem.isActive) : true,
-        sortOrder: rawItem.sortOrder !== undefined ? Number(rawItem.sortOrder) : i,
-        uploadDate: now.substring(0, 10),
-        createdAt: now,
-        updatedAt: now
-      };
-
-      db.gallery.unshift(newItem);
-      createdItems.push(newItem);
-    }
-
-    db.saveToFile();
-    console.log(`✅ Bulk upload successful: ${createdItems.length} items created`);
-    res.status(201).json({
-      status: 'success',
-      success: true,
-      message: `${createdItems.length} gallery items uploaded successfully`,
-      count: createdItems.length,
-      data: createdItems
-    });
-  } catch (err: any) {
-    console.error('❌ Bulk upload error:', err);
-    res.status(500).json({
-      status: 'error',
-      success: false,
-      error: 'Failed to process bulk upload.'
-    });
-  }
-});
-
-// ===== UPDATE GALLERY ITEM =====
-apiRouter.put('/admin/gallery/:id', authenticateJWT, galleryUploadFields, async (req: Request, res: Response) => {
-  try {
-    const index = db.gallery.findIndex(g => String(g.id) === String(req.params.id));
-    if (index === -1) {
-      return res.status(404).json({ status: 'error', success: false, error: 'Gallery item not found' });
-    }
-
-    const existing = db.gallery[index];
-    const body = req.body || {};
-
-    let imageUrl = body.imageUrl || body.image_url || existing.imageUrl;
-    let videoUrl = body.videoUrl || body.video_url || existing.videoUrl;
-    let thumbnailUrl = body.thumbnailUrl || existing.thumbnailUrl || imageUrl;
-
-    if (req.files) {
-      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-      if (files.image && files.image[0]) {
-        const file = files.image[0];
-        imageUrl = `/uploads/images/${file.filename}`;
-        console.log(`🖼️ Image updated: ${file.filename} -> ${imageUrl}`);
-        thumbnailUrl = imageUrl;
-      }
-      if (files.video && files.video[0]) {
-        const file = files.video[0];
-        videoUrl = `/uploads/videos/${file.filename}`;
-        console.log(`🎬 Video updated: ${file.filename} -> ${videoUrl}`);
-        // Regenerate thumbnail
-        const videoPath = path.join(uploadPaths.videosPath, file.filename);
-        const thumbnailFilename = `thumb-${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
-        try {
-          await new Promise((resolve, reject) => {
-            ffmpeg(videoPath)
-              .screenshots({
-                timestamps: [1],
-                filename: thumbnailFilename,
-                folder: uploadPaths.imagesPath,
-                size: '320x180'
-              })
-              .on('end', resolve)
-              .on('error', reject);
-          });
-          thumbnailUrl = `/uploads/images/${thumbnailFilename}`;
-          imageUrl = thumbnailUrl;
-          console.log(`🎬 Thumbnail regenerated: ${thumbnailFilename}`);
-        } catch (ffmpegErr) {
-          console.error('❌ Failed to regenerate thumbnail:', ffmpegErr);
-        }
-      }
-    }
-
-    const updatedItem: GalleryItem = {
-      ...existing,
-      type: body.type !== undefined ? (body.type === 'video' ? 'video' : 'photo') : existing.type,
-      titleEn: body.titleEn || body.title_en || existing.titleEn,
-      titleAr: body.titleAr !== undefined ? body.titleAr : (body.title_ar !== undefined ? body.title_ar : existing.titleAr),
-      imageUrl: imageUrl || '',
-      thumbnailUrl: thumbnailUrl || imageUrl || '',
-      videoUrl: videoUrl || '',
-      duration: body.duration !== undefined ? body.duration : existing.duration,
-      location: body.location !== undefined ? body.location : existing.location,
-      description: body.description !== undefined ? body.description : existing.description,
-      isActive: body.isActive !== undefined ? (String(body.isActive) === 'true' || body.isActive === true) : existing.isActive,
-      sortOrder: body.sortOrder !== undefined ? Number(body.sortOrder) : (body.sort_order !== undefined ? Number(body.sort_order) : existing.sortOrder),
-      updatedAt: new Date().toISOString()
-    };
-
-    db.gallery[index] = updatedItem;
-    db.saveToFile();
-    res.json({ status: 'success', success: true, message: 'Gallery item updated successfully', data: updatedItem });
-  } catch (err: any) {
-    console.error('Update gallery error:', err);
-    res.status(500).json({ status: 'error', success: false, error: 'Failed to update gallery item.' });
-  }
-});
-
-// ===== DELETE GALLERY ITEM =====
-apiRouter.delete('/admin/gallery/:id', authenticateJWT, (req: Request, res: Response) => {
-  const index = db.gallery.findIndex(g => String(g.id) === String(req.params.id));
-  if (index === -1) {
-    return res.status(404).json({ status: 'error', success: false, error: 'Gallery item not found' });
-  }
-  db.gallery.splice(index, 1);
-  db.saveToFile();
-  res.json({ status: 'success', success: true, message: 'Gallery item deleted successfully' });
-});
-
-// ============================================================
-// SUBSCRIBERS
-// ============================================================
-apiRouter.get('/admin/subscribers', authenticateJWT, (req: Request, res: Response) => {
-  res.json({
-    status: 'success',
-    success: true,
-    count: db.subscribers.length,
-    data: db.subscribers
-  });
-});
-
-apiRouter.put('/admin/subscribers/:id', authenticateJWT, (req: Request, res: Response) => {
-  const index = db.subscribers.findIndex(s => s.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: 'error', success: false, error: 'Subscriber not found' });
-  }
-
-  const { name, email, phone, channel, packageInterestId, optInStatus } = req.body;
-  const existing = db.subscribers[index];
-
-  const updated = {
-    ...existing,
-    name: name !== undefined ? name : existing.name,
-    email: email !== undefined ? email : existing.email,
-    phone: phone !== undefined ? phone : existing.phone,
-    channel: channel !== undefined ? channel : existing.channel,
-    packageInterestId: packageInterestId !== undefined ? packageInterestId : existing.packageInterestId,
-    optInStatus: optInStatus !== undefined ? Boolean(optInStatus) : existing.optInStatus,
-    updatedAt: new Date().toISOString()
-  };
-
-  db.subscribers[index] = updated;
-  db.saveToFile();
-
-  res.json({
-    status: 'success',
-    success: true,
-    message: 'Subscriber updated successfully',
-    data: updated
-  });
-});
-
-const handleSubscribe = (req: Request, res: Response) => {
-  const { phone, email, name, channel, packageInterestId } = req.body;
-
-  if (!phone) {
-    return res.status(400).json({ status: 'error', success: false, error: 'Phone number is required' });
-  }
-
-  const existing = db.subscribers.find(s => s.phone === phone);
-
-  if (existing) {
-    existing.optInStatus = true;
-    if (email) existing.email = email;
-    if (name) existing.name = name;
-    if (channel) existing.channel = channel;
-    if (packageInterestId) existing.packageInterestId = packageInterestId;
-    existing.updatedAt = new Date().toISOString();
-    db.saveToFile();
-
-    return res.json({
-      status: 'success',
-      success: true,
-      message: 'Subscription updated successfully',
-      subscriberId: existing.id,
-      data: existing
-    });
-  }
-
-  const now = new Date().toISOString();
-  const newSub = {
-    id: `sub-${Date.now()}`,
-    phone,
-    email: email || '',
-    name: name || '',
-    channel: channel || 'Web Form',
-    packageInterestId: packageInterestId || null,
-    optInStatus: true,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  db.subscribers.unshift(newSub);
-  db.saveToFile();
-
-  res.status(201).json({
-    status: 'success',
-    success: true,
-    message: 'Subscribed successfully',
-    subscriberId: newSub.id,
-    data: newSub
-  });
-};
-
-apiRouter.post('/subscribers', handleSubscribe);
-apiRouter.post('/subscribe', handleSubscribe);
-
-const handleBulkSubscriberImport = (req: Request, res: Response) => {
-  const { subscribers, items } = req.body;
-  const listToImport = Array.isArray(subscribers) ? subscribers : Array.isArray(items) ? items : [];
-
-  if (listToImport.length === 0) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: 'Request body must contain "subscribers" or "items" array'
-    });
-  }
-
-  const imported: any[] = [];
-
-  for (const item of listToImport) {
-    if (!item.phone) continue;
-
-    const existing = db.subscribers.find(s => s.phone === item.phone);
-
-    if (existing) {
-      existing.optInStatus = item.optInStatus !== undefined ? Boolean(item.optInStatus) : true;
-      if (item.email) existing.email = item.email;
-      if (item.name) existing.name = item.name;
-      existing.updatedAt = new Date().toISOString();
-      imported.push(existing);
-    } else {
-      const newSub = {
-        id: `sub-bulk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        phone: item.phone,
-        email: item.email || '',
-        name: item.name || '',
-        channel: item.channel || 'Bulk Import',
-        packageInterestId: item.packageInterestId || null,
-        optInStatus: item.optInStatus !== undefined ? Boolean(item.optInStatus) : true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      db.subscribers.unshift(newSub);
-      imported.push(newSub);
-    }
-  }
-
-  db.saveToFile();
-
-  res.status(201).json({
-    status: 'success',
-    success: true,
-    message: `${imported.length} subscribers imported successfully`,
-    count: imported.length,
-    data: imported
-  });
-};
-
-apiRouter.post('/admin/subscribers/bulk', authenticateJWT, handleBulkSubscriberImport);
-apiRouter.post('/admin/subscribers/bulk-import', authenticateJWT, handleBulkSubscriberImport);
-
-const handleBulkSubscriberDelete = (req: Request, res: Response) => {
-  const { ids, subscriberIds, phoneNumbers } = req.body;
-  const targetIds = Array.isArray(ids) ? ids : Array.isArray(subscriberIds) ? subscriberIds : [];
-  const targetPhones = Array.isArray(phoneNumbers) ? phoneNumbers : [];
-
-  if (targetIds.length === 0 && targetPhones.length === 0) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: 'Provide an array of "ids" or "phoneNumbers" to delete'
-    });
-  }
-
-  const initialCount = db.subscribers.length;
-
-  if (targetIds.length > 0) {
-    db.subscribers = db.subscribers.filter(s => !targetIds.includes(s.id));
-  }
-  if (targetPhones.length > 0) {
-    db.subscribers = db.subscribers.filter(s => !targetPhones.includes(s.phone));
-  }
-
-  const deletedCount = initialCount - db.subscribers.length;
-  db.saveToFile();
-
-  res.json({
-    status: 'success',
-    success: true,
-    message: `${deletedCount} subscribers deleted successfully`,
-    deletedCount
-  });
-};
-
-apiRouter.delete('/admin/subscribers/bulk-delete', authenticateJWT, handleBulkSubscriberDelete);
-apiRouter.post('/admin/subscribers/bulk-delete', authenticateJWT, handleBulkSubscriberDelete);
 
 // ============================================================
 // INQUIRIES
@@ -1632,6 +1553,321 @@ apiRouter.delete('/admin/team-members/:id', authenticateJWT, (req: Request, res:
     status: 'success',
     success: true,
     message: 'Team member deleted successfully'
+  });
+});
+
+// ============================================================
+// OFFICE IMAGES (with file upload)
+// ============================================================
+
+// Public endpoint - Get all active office images
+apiRouter.get('/office-images', (req: Request, res: Response) => {
+  try {
+    const activeImages = db.officeImages
+      .filter(img => img.isActive !== false)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    // Format response - title is optional
+    const formattedData = activeImages.map(img => ({
+      id: img.id,
+      title: img.title || '',
+      imageUrl: img.imageUrl,
+      description: img.description || '',
+      order: img.order || 0,
+      isActive: img.isActive,
+      createdAt: img.createdAt,
+      updatedAt: img.updatedAt
+    }));
+
+    res.json({
+      status: 'success',
+      success: true,
+      count: formattedData.length,
+      data: formattedData
+    });
+  } catch (error: any) {
+    console.error('❌ Error fetching office images:', error);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to fetch office images'
+    });
+  }
+});
+
+// Admin endpoints
+apiRouter.get('/admin/office-images', authenticateJWT, (req: Request, res: Response) => {
+  const sorted = [...db.officeImages].sort((a, b) => (a.order || 0) - (b.order || 0));
+  
+  const formattedData = sorted.map(img => ({
+    id: img.id,
+    title: img.title || '',
+    imageUrl: img.imageUrl,
+    description: img.description || '',
+    order: img.order || 0,
+    isActive: img.isActive,
+    createdAt: img.createdAt,
+    updatedAt: img.updatedAt
+  }));
+
+  res.json({
+    status: 'success',
+    success: true,
+    count: formattedData.length,
+    data: formattedData
+  });
+});
+
+// CREATE Office Image with file upload - Title is optional
+apiRouter.post('/admin/office-images', authenticateJWT, officeUpload, (req: Request, res: Response) => {
+  try {
+    const { title, description, order, isActive } = req.body;
+    const file = (req as any).file;
+
+    let imageUrl = '';
+    if (file) {
+      // FIXED: Use /uploads/office/ path instead of /uploads/images/
+      imageUrl = `/uploads/office/${file.filename}`;
+      console.log(`📁 Office image uploaded: ${file.filename} -> ${imageUrl}`);
+    }
+
+    // Only imageUrl is required, title is optional
+    if (!imageUrl) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Image is required'
+      });
+    }
+
+    const newImage: OfficeImage = {
+      id: `office-${Date.now()}`,
+      title: title || '',
+      imageUrl: imageUrl,
+      description: description || '',
+      order: order !== undefined ? Number(order) : db.officeImages.length + 1,
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    db.addOfficeImage(newImage);
+    res.status(201).json({
+      status: 'success',
+      success: true,
+      message: 'Office image added successfully',
+      data: newImage
+    });
+  } catch (err: any) {
+    console.error('❌ Error creating office image:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to create office image: ' + err.message
+    });
+  }
+});
+
+// UPDATE Office Image - Title is optional
+apiRouter.put('/admin/office-images/:id', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const index = db.officeImages.findIndex(img => img.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Office image not found' });
+    }
+
+    const { title, description, order, isActive } = req.body;
+    const existing = db.officeImages[index];
+
+    const updated: OfficeImage = {
+      id: existing.id,
+      title: title !== undefined ? title : existing.title,
+      imageUrl: existing.imageUrl,
+      description: description !== undefined ? description : existing.description,
+      order: order !== undefined ? Number(order) : existing.order,
+      isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
+      createdAt: existing.createdAt,
+      updatedAt: new Date().toISOString()
+    };
+
+    db.updateOfficeImage(index, updated);
+    res.json({
+      status: 'success',
+      success: true,
+      message: 'Office image updated successfully',
+      data: updated
+    });
+  } catch (err: any) {
+    console.error('❌ Error updating office image:', err);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to update office image: ' + err.message
+    });
+  }
+});
+
+apiRouter.delete('/admin/office-images/:id', authenticateJWT, (req: Request, res: Response) => {
+  const index = db.officeImages.findIndex(img => img.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ status: 'error', success: false, error: 'Office image not found' });
+  }
+
+  db.deleteOfficeImage(index);
+  res.json({
+    status: 'success',
+    success: true,
+    message: 'Office image deleted successfully'
+  });
+});
+
+// ============================================================
+// TESTIMONIALS
+// ============================================================
+
+// Public endpoint - Get all active testimonials
+apiRouter.get('/testimonials', (req: Request, res: Response) => {
+  try {
+    console.log('📥 GET /testimonials - Fetching testimonials');
+    
+    const activeTestimonials = db.testimonials
+      .filter(t => t.isActive !== false)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    // Format data WITHOUT avatar
+    const formattedData = activeTestimonials.map(t => ({
+      id: t.id || `test-${Date.now()}`,
+      name: t.name || 'Anonymous',
+      location: t.location || '',
+      rating: t.rating || 5,
+      text: t.text || '',
+      textAr: t.textAr || t.text || '',
+      date: t.date || new Date().toISOString().split('T')[0],
+      isActive: t.isActive !== undefined ? t.isActive : true,
+      createdAt: t.createdAt || new Date().toISOString(),
+      updatedAt: t.updatedAt || new Date().toISOString()
+    }));
+
+    res.json({
+      status: 'success',
+      success: true,
+      count: formattedData.length,
+      data: formattedData
+    });
+  } catch (error: any) {
+    console.error('❌ Error fetching testimonials:', error);
+    res.status(500).json({
+      status: 'error',
+      success: false,
+      error: 'Failed to fetch testimonials',
+      details: error.message
+    });
+  }
+});
+
+// Admin endpoints
+apiRouter.get('/admin/testimonials', authenticateJWT, (req: Request, res: Response) => {
+  const sorted = [...db.testimonials].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  
+  // Format data WITHOUT avatar
+  const formattedData = sorted.map(t => ({
+    id: t.id,
+    name: t.name,
+    location: t.location || '',
+    rating: t.rating || 5,
+    text: t.text,
+    textAr: t.textAr || t.text,
+    date: t.date,
+    isActive: t.isActive,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt
+  }));
+  
+  res.json({
+    status: 'success',
+    success: true,
+    count: formattedData.length,
+    data: formattedData
+  });
+});
+
+apiRouter.post('/admin/testimonials', authenticateJWT, (req: Request, res: Response) => {
+  const { name, location, rating, text, textAr, date, isActive } = req.body;
+
+  if (!name || !text || !rating) {
+    return res.status(400).json({
+      status: 'error',
+      success: false,
+      error: 'Name, text, and rating are required'
+    });
+  }
+
+  const newTestimonial: Testimonial = {
+    id: `test-${Date.now()}`,
+    name: name.trim(),
+    location: location || '',
+    rating: Number(rating),
+    text: text.trim(),
+    textAr: textAr || text.trim(),
+    // avatar: '', // REMOVED
+    date: date || new Date().toISOString().split('T')[0],
+    isActive: isActive !== undefined ? Boolean(isActive) : true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  db.addTestimonial(newTestimonial);
+  res.status(201).json({
+    status: 'success',
+    success: true,
+    message: 'Testimonial added successfully',
+    data: newTestimonial
+  });
+});
+
+apiRouter.put('/admin/testimonials/:id', authenticateJWT, (req: Request, res: Response) => {
+  const index = db.testimonials.findIndex(t => t.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ status: 'error', success: false, error: 'Testimonial not found' });
+  }
+
+  const { name, location, rating, text, textAr, date, isActive } = req.body;
+  const existing = db.testimonials[index];
+
+  const updated: Testimonial = {
+    id: existing.id,
+    name: name !== undefined ? name.trim() : existing.name,
+    location: location !== undefined ? location : existing.location,
+    rating: rating !== undefined ? Number(rating) : existing.rating,
+    text: text !== undefined ? text.trim() : existing.text,
+    textAr: textAr !== undefined ? textAr.trim() : (existing.textAr || existing.text),
+    // avatar: existing.avatar, // REMOVED
+    date: date !== undefined ? date : existing.date,
+    isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
+    createdAt: existing.createdAt,
+    updatedAt: new Date().toISOString()
+  };
+
+  db.updateTestimonial(index, updated);
+  res.json({
+    status: 'success',
+    success: true,
+    message: 'Testimonial updated successfully',
+    data: updated
+  });
+});
+
+apiRouter.delete('/admin/testimonials/:id', authenticateJWT, (req: Request, res: Response) => {
+  const index = db.testimonials.findIndex(t => t.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ status: 'error', success: false, error: 'Testimonial not found' });
+  }
+
+  db.deleteTestimonial(index);
+  res.json({
+    status: 'success',
+    success: true,
+    message: 'Testimonial deleted successfully'
   });
 });
 

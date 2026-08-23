@@ -1,5 +1,355 @@
 {
-  "packages": [],
+  "packages": [
+    {
+      "id": "pkg-1787515814364",
+      "titleEn": "10",
+      "titleAr": "",
+      "titleAm": "",
+      "category": "Standard",
+      "priceUsd": 190,
+      "priceEtb": 30000,
+      "priceSar": 150,
+      "priceType": "single",
+      "durationDays": 7,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "visa",
+        "Tickets"
+      ],
+      "availableDates": [
+        "2026-08-11",
+        "2026-08-14"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Day 1: Arrival & Welcome",
+          "description": ""
+        },
+        {
+          "dayNumber": 2,
+          "title": "Day 2: Day of Worship",
+          "description": ""
+        },
+        {
+          "dayNumber": 3,
+          "title": "Day 3: Ziyarat Tour",
+          "description": ""
+        },
+        {
+          "dayNumber": 4,
+          "title": "Day 4: Free Day for Ibadah",
+          "description": ""
+        },
+        {
+          "dayNumber": 5,
+          "title": "Day 5: Day of Reflection",
+          "description": ""
+        },
+        {
+          "dayNumber": 6,
+          "title": "Day 6: Departure Preparation",
+          "description": ""
+        },
+        {
+          "dayNumber": 7,
+          "title": "Day 7: Farewell & Return",
+          "description": ""
+        }
+      ],
+      "imageUrl": "/uploads/packages/1787515814337-350992694-dentist1.jpg",
+      "isActive": true,
+      "status": "Active",
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-23T20:10:14.364Z",
+      "updatedAt": "2026-08-23T20:28:57.792Z"
+    },
+    {
+      "id": "pkg-1787513199045",
+      "titleEn": "5",
+      "titleAr": "",
+      "titleAm": "",
+      "category": "Economy",
+      "priceUsd": 100,
+      "priceEtb": 20000,
+      "priceSar": 400,
+      "priceType": "range",
+      "durationDays": 5,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Visa",
+        "Tickets"
+      ],
+      "availableDates": [
+        "2026-08-26",
+        "2026-09-09"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Day 1: Arrival & Welcome",
+          "description": ""
+        },
+        {
+          "dayNumber": 2,
+          "title": "Day 2: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 3,
+          "title": "Day 3: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 4,
+          "title": "Day 4: Religious Program",
+          "description": ""
+        },
+        {
+          "dayNumber": 5,
+          "title": "Day 5: Religious Program",
+          "description": ""
+        }
+      ],
+      "imageUrl": "/uploads/packages/1787513199021-722087155-umrah4.jpg",
+      "isActive": true,
+      "status": "Active",
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-23T19:26:39.045Z",
+      "updatedAt": "2026-08-23T19:28:44.158Z",
+      "priceUsdMin": 100,
+      "priceUsdMax": 300,
+      "priceEtbMin": 20000,
+      "priceEtbMax": 50000,
+      "priceSarMin": 400,
+      "priceSarMax": 1200
+    },
+    {
+      "id": "pkg-1",
+      "titleEn": "Premium Umrah Package",
+      "titleAr": "باقة العمرة الممتازة",
+      "titleAm": "የተሻሻለ ዑምራ ፓኬጅ",
+      "category": "Premium",
+      "priceUsd": 5000,
+      "priceEtb": 900000,
+      "priceSar": 20000,
+      "priceType": "single",
+      "durationDays": 10,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Return flights (Ethiopian Airlines)",
+        "3-star hotel in Makkah (Dar Al Eiman)",
+        "2-star hotel in Madinah (Anwar Al Madinah)",
+        "Private transport between cities",
+        "Daily breakfast and dinner",
+        "Guided ziyarat tours",
+        "24/7 support from Mutawwif"
+      ],
+      "availableDates": [
+        "2026-12-01",
+        "2026-12-15",
+        "2027-01-05"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Arrival in Madinah",
+          "description": "Arrive at Madinah Airport, transfer to hotel, rest and prepare for Umrah"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Madinah Ziyarat",
+          "description": "Visit Masjid Nabawi, Quba Mosque, Uhud Mountain, and other historical sites"
+        },
+        {
+          "dayNumber": 3,
+          "title": "Travel to Makkah",
+          "description": "Travel to Makkah by private bus, check-in to hotel, prepare for Umrah"
+        },
+        {
+          "dayNumber": 4,
+          "title": "Perform Umrah",
+          "description": "Perform Umrah rituals with guidance from Mutawwif"
+        },
+        {
+          "dayNumber": 5,
+          "title": "Makkah Ziyarat",
+          "description": "Visit Arafat, Muzdalifah, Mina, and other significant sites"
+        },
+        {
+          "dayNumber": 6,
+          "title": "Second Umrah",
+          "description": "Second Umrah opportunity for those who wish to perform again"
+        },
+        {
+          "dayNumber": 7,
+          "title": "Free Day in Makkah",
+          "description": "Free time for prayer, reflection, and shopping"
+        },
+        {
+          "dayNumber": 8,
+          "title": "Travel to Madinah",
+          "description": "Travel back to Madinah, check-in to hotel"
+        },
+        {
+          "dayNumber": 9,
+          "title": "Madinah Ziyarat",
+          "description": "Additional Ziyarat in Madinah"
+        },
+        {
+          "dayNumber": 10,
+          "title": "Departure",
+          "description": "Transfer to Madinah Airport for return flight"
+        }
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1583434103998-6b4f8a9d7d8a?auto=format&fit=crop&q=80&w=800",
+      "isActive": true,
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T20:15:48.717Z",
+      "status": "Active"
+    },
+    {
+      "id": "pkg-2",
+      "titleEn": "Standard Umrah Package",
+      "titleAr": "باقة العمرة القياسية",
+      "titleAm": "መደበኛ ዑምራ ፓኬጅ",
+      "category": "Standard",
+      "priceUsd": 2500,
+      "priceEtb": 119940,
+      "priceSar": 7496,
+      "priceType": "range",
+      "durationDays": 8,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Return flights (Saudia Airlines)",
+        "3-star hotel in Makkah",
+        "2-star hotel in Madinah",
+        "Shared transport between cities",
+        "Daily breakfast",
+        "Guided ziyarat tours"
+      ],
+      "availableDates": [
+        "2026-12-10",
+        "2027-01-15"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Arrival in Madinah",
+          "description": "Arrive at Madinah Airport, transfer to hotel"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Madinah Ziyarat",
+          "description": "Visit Masjid Nabawi and other historical sites"
+        },
+        {
+          "dayNumber": 3,
+          "title": "Travel to Makkah",
+          "description": "Travel to Makkah by bus, check-in to hotel"
+        },
+        {
+          "dayNumber": 4,
+          "title": "Perform Umrah",
+          "description": "Perform Umrah rituals with guidance"
+        },
+        {
+          "dayNumber": 5,
+          "title": "Makkah Ziyarat",
+          "description": "Visit significant sites around Makkah"
+        },
+        {
+          "dayNumber": 6,
+          "title": "Free Day",
+          "description": "Free time for prayer and reflection"
+        },
+        {
+          "dayNumber": 7,
+          "title": "Travel to Madinah",
+          "description": "Travel back to Madinah"
+        },
+        {
+          "dayNumber": 8,
+          "title": "Departure",
+          "description": "Transfer to Madinah Airport for return flight"
+        }
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&q=80&w=800",
+      "isActive": true,
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T20:24:35.633Z",
+      "status": "Active",
+      "priceUsdMin": 2500,
+      "priceUsdMax": 3000,
+      "priceEtbMin": 450000,
+      "priceEtbMax": 500000,
+      "priceSarMin": 10000,
+      "priceSarMax": 13000
+    },
+    {
+      "id": "pkg-3",
+      "titleEn": "Economy Umrah Package",
+      "titleAr": "باقة العمرة الاقتصادية",
+      "titleAm": "ኢኮኖሚ ዑምራ ፓኬጅ",
+      "category": "Economy",
+      "priceUsd": 1299,
+      "priceEtb": 77940,
+      "priceSar": 4871,
+      "priceType": "single",
+      "durationDays": 6,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Return flights (Flydubai)",
+        "2-star hotel in Makkah",
+        "1-star hotel in Madinah",
+        "Shared transport between cities",
+        "Daily breakfast"
+      ],
+      "availableDates": [
+        "2027-01-20",
+        "2027-02-10"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Arrival in Madinah",
+          "description": "Arrive at Madinah Airport, transfer to hotel"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Madinah Ziyarat",
+          "description": "Visit Masjid Nabawi"
+        },
+        {
+          "dayNumber": 3,
+          "title": "Travel to Makkah",
+          "description": "Travel to Makkah by bus"
+        },
+        {
+          "dayNumber": 4,
+          "title": "Perform Umrah",
+          "description": "Perform Umrah rituals"
+        },
+        {
+          "dayNumber": 5,
+          "title": "Free Day",
+          "description": "Free time for prayer"
+        },
+        {
+          "dayNumber": 6,
+          "title": "Departure",
+          "description": "Transfer to airport for return flight"
+        }
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&q=80&w=800",
+      "isActive": true,
+      "whatsappClicks": 0,
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
+    }
+  ],
   "subscribers": [
     {
       "id": "sub-1",
@@ -8,9 +358,10 @@
       "name": "Abebe Bikila",
       "channel": "Footer Newsletter",
       "packageInterestId": "pkg-1",
-      "optInStatus": true,
-      "createdAt": "2026-08-18T15:24:22.600Z",
-      "updatedAt": "2026-08-18T16:20:32.861Z"
+      "optInStatus": "Active",
+      "dateSubscribed": "2026-08-23T19:23:02.927Z",
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
     },
     {
       "id": "sub-2",
@@ -19,9 +370,10 @@
       "name": "Sara Mohammed",
       "channel": "Umrah Package Modal",
       "packageInterestId": "pkg-2",
-      "optInStatus": true,
-      "createdAt": "2026-08-18T15:24:22.600Z",
-      "updatedAt": "2026-08-18T16:03:43.685Z"
+      "optInStatus": "Active",
+      "dateSubscribed": "2026-08-23T19:23:02.927Z",
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
     }
   ],
   "inquiries": [
@@ -34,8 +386,9 @@
       "message": "Assalamu Alaikum. We have a family group of 8 persons interested in the Premium Umrah package.",
       "status": "New",
       "source": "Contact Us Form",
-      "createdAt": "2026-08-18T15:24:22.600Z",
-      "updatedAt": "2026-08-18T15:24:22.600Z"
+      "dateReceived": "2026-08-23T19:23:02.927Z",
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
     },
     {
       "id": "inq-2",
@@ -46,8 +399,9 @@
       "message": "Hello Delta Travel, I want to confirm if children under 12 need separate medical certificates.",
       "status": "Contacted",
       "source": "Package Page",
-      "createdAt": "2026-08-18T15:24:22.600Z",
-      "updatedAt": "2026-08-18T15:24:22.600Z"
+      "dateReceived": "2026-08-23T19:23:02.927Z",
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
     }
   ],
   "gallery": [],
@@ -56,13 +410,13 @@
       "id": "usr-1",
       "username": "admin",
       "email": "admin@deltatravel.com",
-      "passwordHash": "$2b$10$fA3zndQpkii6i5E36rXpMOXxHEWQk7uCULvqxKX/iAZYZTUbAoK/C",
+      "passwordHash": "$2b$10$iwv2kxHGrHS0Q93pcgq4He3KOu/2R2uP.8u.QVzN4k8dF/33UFThi",
       "role": "Admin",
-      "lastLogin": null,
+      "lastLogin": "2026-08-23T20:04:45.805Z",
       "isActive": true,
       "status": "Active",
-      "createdAt": "2026-08-18T15:24:22.600Z",
-      "updatedAt": "2026-08-18T15:24:22.600Z"
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
     }
   ],
   "smsLogs": [
@@ -72,75 +426,129 @@
       "message": "Thank you for subscribing to Delta Travel & Tour updates!",
       "status": "Delivered",
       "campaignName": "Subscription Welcome SMS",
-      "sentAt": "2026-08-18T15:24:22.600Z"
+      "sentAt": "2026-08-23T19:23:02.927Z"
     }
   ],
-  "socialLinks": [
+  "socialLinks": [],
+  "priceLogs": [
     {
-      "id": "sl-1787067796511",
-      "platform": "telegram",
-      "url": "https://t.me/Nurenwek",
-      "isActive": true,
-      "icon": "Telegram"
+      "id": "pl-1787516937792",
+      "packageId": "pkg-1787515814364",
+      "priceUsd": 190,
+      "priceEtb": 30000,
+      "priceSar": 150,
+      "previousPriceUsd": 250,
+      "previousPriceEtb": 40000,
+      "previousPriceSar": 900,
+      "reason": "Price updated via admin",
+      "updatedBy": "Admin",
+      "updatedAt": "2026-08-23T20:28:57.792Z"
     },
     {
-      "id": "sl-1787067832306",
-      "platform": "facebook",
-      "url": "https://facebook.com/deltatravel",
-      "isActive": true,
-      "icon": "Facebook"
+      "id": "pl-1787516675634",
+      "packageId": "pkg-2",
+      "priceUsd": 2500,
+      "priceEtb": 119940,
+      "priceSar": 7496,
+      "previousPriceUsd": 1999,
+      "previousPriceEtb": 119940,
+      "previousPriceSar": 7496,
+      "reason": "Price updated via admin",
+      "updatedBy": "Admin",
+      "updatedAt": "2026-08-23T20:24:35.634Z"
     },
     {
-      "id": "sl-1787067852626",
-      "platform": "instagram",
-      "url": "https://instagram.com/deltatravelethiopia",
-      "isActive": true,
-      "icon": "Instagram"
+      "id": "pl-1787516148717",
+      "packageId": "pkg-1",
+      "priceUsd": 5000,
+      "priceEtb": 900000,
+      "priceSar": 20000,
+      "previousPriceUsd": 2999,
+      "previousPriceEtb": 179940,
+      "previousPriceSar": 11246,
+      "reason": "Price updated via admin",
+      "updatedBy": "Admin",
+      "updatedAt": "2026-08-23T20:15:48.717Z"
     },
     {
-      "id": "sl-1787067889259",
-      "platform": "tiktok",
-      "url": "https://tiktok.com/@deltatravel",
-      "isActive": true,
-      "icon": "TikTok"
+      "id": "pl-1787515917884",
+      "packageId": "pkg-1787515814364",
+      "priceUsd": 250,
+      "priceEtb": 40000,
+      "priceSar": 900,
+      "previousPriceUsd": 200,
+      "previousPriceEtb": 40000,
+      "previousPriceSar": 900,
+      "reason": "Seasonal Adjustment",
+      "updatedBy": "Admin",
+      "updatedAt": "2026-08-23T20:11:57.884Z"
     },
     {
-      "id": "sl-1787067913289",
-      "platform": "linkedin",
-      "url": "https://linkedin.com/company/deltatravel",
-      "isActive": true,
-      "icon": "Linkedin"
+      "id": "pl-1787515814375",
+      "packageId": "pkg-1787515814364",
+      "priceUsd": 200,
+      "priceEtb": 40000,
+      "priceSar": 900,
+      "previousPriceUsd": null,
+      "previousPriceEtb": null,
+      "previousPriceSar": null,
+      "reason": "Initial package creation",
+      "updatedBy": "Admin",
+      "updatedAt": "2026-08-23T20:10:14.364Z"
+    },
+    {
+      "id": "pl-1787513199052",
+      "packageId": "pkg-1787513199045",
+      "priceUsd": 100,
+      "priceEtb": 20000,
+      "priceSar": 400,
+      "previousPriceUsd": null,
+      "previousPriceEtb": null,
+      "previousPriceSar": null,
+      "reason": "Initial package creation",
+      "updatedBy": "Admin",
+      "updatedAt": "2026-08-23T19:26:39.045Z"
     }
   ],
-  "priceLogs": [],
-  "faqs": [
+  "faqs": [],
+  "teamMembers": [],
+  "officeImages": [],
+  "testimonials": [
     {
-      "id": "faq-1787068050739",
-      "question": "What is included in the Umrah package?",
-      "answer": "Our Umrah packages include visa processing, round-trip flights, hotel accommodation, transportation, and a dedicated tour guide (Ustaz)."
-    },
-    {
-      "id": "faq-1787068106687",
-      "question": "How long does the Umrah visa process take?",
-      "answer": "The Umrah visa processing typically takes 3-5 business days after we receive all required documents."
-    },
-    {
-      "id": "faq-1787068127984",
-      "question": "Are the hotels near the mosques?",
-      "answer": "Yes, all our hotels are located within walking distance of the Holy Mosques in Makkah and Madinah."
-    }
-  ],
-  "teamMembers": [
-    {
-      "id": "tm-1787068851807",
-      "name": "Ustaz",
-      "role": "Head Ustaz",
-      "bio": "Makkah Ustaz",
-      "imageUrl": "/uploads/team/1787068851753-277915458-umrah4.jpg",
-      "order": 1,
+      "id": "test-1",
+      "name": "Ahmed Mohammed",
+      "location": "Addis Ababa, Ethiopia",
+      "rating": 5,
+      "text": "An unforgettable spiritual journey! Delta Travel made our Umrah experience seamless and stress-free. The hotels were excellent and the guidance was exceptional.",
+      "textAr": "رحلة روحية لا تنسى! جعلت دلتا ترافيل تجربة العمرة لدينا سلسة وخالية من الإجهاد. كانت الفنادق ممتازة والإرشاد استثنائي.",
+      "date": "2026-01-15",
       "isActive": true,
-      "createdAt": "2026-08-18T16:00:51.808Z",
-      "updatedAt": "2026-08-18T16:00:51.808Z"
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
+    },
+    {
+      "id": "test-2",
+      "name": "Fatima Zewde",
+      "location": "Addis Ababa, Ethiopia",
+      "rating": 5,
+      "text": "The best travel agency for Umrah! Everything was perfectly organized from flights to accommodations. The Mutawwif was very knowledgeable and helpful.",
+      "textAr": "أفضل وكالة سفر للعمرة! كل شيء كان منظمًا بشكل مثالي من الرحلات إلى الإقامة. كان المطوف على دراية كبيرة ومفيدًا.",
+      "date": "2026-01-20",
+      "isActive": true,
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
+    },
+    {
+      "id": "test-3",
+      "name": "Bilal Ibrahim",
+      "location": "Addis Ababa, Ethiopia",
+      "rating": 5,
+      "text": "I highly recommend Delta Travel for anyone planning Umrah. The team was professional, responsive, and made sure every detail was taken care of.",
+      "textAr": "أنصح بشدة دلتا ترافيل لأي شخص يخطط للعمرة. كان الفريق محترفًا ومستجيبًا وتأكد من العناية بكل التفاصيل.",
+      "date": "2026-02-01",
+      "isActive": true,
+      "createdAt": "2026-08-23T19:23:02.927Z",
+      "updatedAt": "2026-08-23T19:23:02.927Z"
     }
   ]
 }

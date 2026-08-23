@@ -58,9 +58,10 @@ async function startServer() {
   const imagesPath = path.join(uploadPath, 'images');
   const packagesPath = path.join(uploadPath, 'packages');
   const teamPath = path.join(uploadPath, 'team');
+  const officePath = path.join(uploadPath, 'office');
 
   // Create all directories
-[uploadPath, videosPath, imagesPath, packagesPath, teamPath].forEach(dir => {
+[uploadPath, videosPath, imagesPath, packagesPath, teamPath, officePath].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     console.log(`📁 Created directory: ${dir}`);
@@ -72,6 +73,7 @@ async function startServer() {
   console.log('🖼️ Images directory:', imagesPath);
   console.log('📦 Packages directory:', packagesPath);
   console.log('👤 Team directory:', teamPath);
+  console.log('👤 Office directory:', officePath);
 
   // ============================================================
   // CORS MIDDLEWARE FOR STATIC FILES
@@ -135,9 +137,20 @@ app.use('/uploads/packages', express.static(packagesPath, {
   }
 }));
 
-// Team folder - ADD THIS
+// Team folder 
 app.use('/uploads/team', staticCors);
 app.use('/uploads/team', express.static(teamPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
+    else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+    else if (filePath.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
+
+// Office Folder
+app.use('/uploads/office', staticCors);
+app.use('/uploads/office', express.static(officePath, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
     else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
@@ -209,67 +222,73 @@ app.use('/uploads', express.static(uploadPath, {
 
   // Root endpoint
   app.get('/', (req, res) => {
-    res.json({
-      status: "online",
-      message: "Delta Travel API is running",
-      version: "1.0.0",
-      documentation: `${req.protocol}://${req.get('host')}/api-docs`,
-      endpoints: {
-        public: [
-          "GET /api/packages",
-          "GET /api/packages/:id",
-          "POST /api/packages/:id/click-whatsapp",
-          "GET /api/gallery",
-          "POST /api/subscribers",
-          "POST /api/inquiries",
-          "GET /api/exchange-rate",
-          "GET /api/faqs",
-          "GET /api/social-links",
-          "GET /api/team-members",
-          "GET /api/health"
-        ],
-        auth: [
-          "POST /api/admin/auth/login",
-          "GET /api/admin/auth/me"
-        ],
-        admin: [
-          "GET /api/admin/packages",
-          "POST /api/admin/packages",
-          "PUT /api/admin/packages/:id",
-          "DELETE /api/admin/packages/:id",
-          "GET /api/admin/gallery",
-          "POST /api/admin/gallery",
-          "POST /api/admin/gallery/bulk",
-          "PUT /api/admin/gallery/:id",
-          "DELETE /api/admin/gallery/:id",
-          "GET /api/admin/inquiries",
-          "PUT /api/admin/inquiries/:id",
-          "DELETE /api/admin/inquiries/:id",
-          "GET /api/admin/subscribers",
-          "POST /api/admin/subscribers/bulk",
-          "DELETE /api/admin/subscribers/bulk-delete",
-          "POST /api/admin/sms/campaign",
-          "GET /api/admin/sms/campaigns",
-          "GET /api/admin/users",
-          "POST /api/admin/users",
-          "PUT /api/admin/users/:id",
-          "DELETE /api/admin/users/:id",
-          "GET /api/admin/exchange-rate",
-          "POST /api/admin/exchange-rate",
-          "GET /api/admin/dashboard/stats",
-          "GET /api/admin/faqs",
-          "POST /api/admin/faqs",
-          "PUT /api/admin/faqs/:id",
-          "DELETE /api/admin/faqs/:id",
-          "GET /api/admin/social-links",
-          "POST /api/admin/social-links",
-          "PUT /api/admin/social-links/:id",
-          "DELETE /api/admin/social-links/:id",
-          "GET /api/admin/team-members",
-          "POST /api/admin/team-members",
-          "PUT /api/admin/team-members/:id",
-          "DELETE /api/admin/team-members/:id"
-        ]
+  res.json({
+    status: "online",
+    message: "Delta Travel API is running",
+    version: "1.0.0",
+    documentation: `${req.protocol}://${req.get('host')}/api-docs`,
+    endpoints: {
+      public: [
+        "GET /api/packages",
+        "GET /api/packages/:id",
+        "POST /api/packages/:id/click-whatsapp",
+        "GET /api/gallery",
+        "POST /api/subscribers",
+        "POST /api/inquiries",
+        "GET /api/exchange-rate",
+        "GET /api/faqs",
+        "GET /api/social-links",
+        "GET /api/team-members",
+        "GET /api/office-images",
+        "GET /api/health"
+      ],
+      auth: [
+        "POST /api/admin/auth/login",
+        "GET /api/admin/auth/me"
+      ],
+      admin: [
+        "GET /api/admin/packages",
+        "POST /api/admin/packages",
+        "PUT /api/admin/packages/:id",
+        "DELETE /api/admin/packages/:id",
+        "GET /api/admin/gallery",
+        "POST /api/admin/gallery",
+        "POST /api/admin/gallery/bulk",
+        "PUT /api/admin/gallery/:id",
+        "DELETE /api/admin/gallery/:id",
+        "GET /api/admin/inquiries",
+        "PUT /api/admin/inquiries/:id",
+        "DELETE /api/admin/inquiries/:id",
+        "GET /api/admin/subscribers",
+        "POST /api/admin/subscribers/bulk",
+        "DELETE /api/admin/subscribers/bulk-delete",
+        "POST /api/admin/sms/campaign",
+        "GET /api/admin/sms/campaigns",
+        "GET /api/admin/users",
+        "POST /api/admin/users",
+        "PUT /api/admin/users/:id",
+        "DELETE /api/admin/users/:id",
+        "GET /api/admin/exchange-rate",
+        "POST /api/admin/exchange-rate",
+        "GET /api/admin/dashboard/stats",
+        "GET /api/admin/faqs",
+        "POST /api/admin/faqs",
+        "PUT /api/admin/faqs/:id",
+        "DELETE /api/admin/faqs/:id",
+        "GET /api/admin/social-links",
+        "POST /api/admin/social-links",
+        "PUT /api/admin/social-links/:id",
+        "DELETE /api/admin/social-links/:id",
+        "GET /api/admin/team-members",
+        "POST /api/admin/team-members",
+        "PUT /api/admin/team-members/:id",
+        "DELETE /api/admin/team-members/:id",
+        "GET /api/admin/office-images",
+        "POST /api/admin/office-images",
+        "PUT /api/admin/office-images/:id",
+        "DELETE /api/admin/office-images/:id"
+      ]
+
       }
     });
   });
@@ -327,6 +346,7 @@ app.use('/uploads', express.static(uploadPath, {
     console.log(`🖼️ Images directory: ${imagesPath}`);
     console.log(`📦 Packages directory: ${packagesPath}`);
     console.log(`👤 Team directory: ${teamPath}`);
+    console.log(`👤 Office Images directory: ${officePath}`);
     console.log(`=======================================================`);
   });
 }

@@ -13,6 +13,8 @@ export type PageId =
   | 'contact';
 
 export type PackageCategory = 'Economy' | 'Standard' | 'Premium' | 'VIP';
+export type PriceType = 'single' | 'range' | 'perPerson';
+export type DiscountType = 'percentage' | 'fixed';
 
 export interface ItineraryDay {
   dayNumber: number;
@@ -20,6 +22,35 @@ export interface ItineraryDay {
   description: string;
   titleEn?: string;
   descriptionEn?: string;
+}
+
+// Person/Group pricing for per-person packages
+export interface PersonPrice {
+  id: string;
+  label: string; // e.g., "Adult", "Child (6-12)", "Senior (60+)"
+  priceUsd: number;
+  priceEtb: number;
+  priceSar: number;
+  minAge?: number;
+  maxAge?: number;
+  isDefault?: boolean;
+  isActive: boolean;
+}
+
+// Discount structure
+export interface Discount {
+  id: string;
+  type: DiscountType; // 'percentage' or 'fixed'
+  value: number; // percentage (e.g., 15) or fixed amount (e.g., 50)
+  discountedPriceUsd?: number; // Calculated price after discount
+  discountedPriceEtb?: number;
+  discountedPriceSar?: number;
+  label: string; // e.g., "Family Discount", "Group Discount", "Senior Citizens"
+  description?: string;
+  minPersons?: number; // Minimum persons for group discount
+  maxPersons?: number; // Maximum persons for group discount
+  ageGroup?: string; // e.g., "0-12", "13-17", "60+"
+  isActive: boolean;
 }
 
 export interface PackageItem {
@@ -128,10 +159,13 @@ export interface Testimonial {
   location: string;
   rating: number;
   text: string;
-  textAr: string;
-  packageTaken: string;
+  textAr?: string;
+  packageTaken?: string;
   date: string;
-  avatar: string;
+  avatar?: string;
+  isActive?: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Admin Types
@@ -196,16 +230,37 @@ export interface SmsLog {
   sentAt: string;
 }
 
-// TravelPackage Types
+// TravelPackage Types - UPDATED with new pricing
 export interface TravelPackage {
   id: string;
   titleEn: string;
   titleAr: string;
   titleAm: string;
   category: PackageCategory;
+  
+  // Main pricing
   priceUsd: number;
   priceEtb: number;
   priceSar: number;
+  priceType: PriceType; // 'single', 'range', 'perPerson'
+  
+  // Price range (if priceType === 'range')
+  priceUsdMin?: number;
+  priceUsdMax?: number;
+  priceEtbMin?: number;
+  priceEtbMax?: number;
+  priceSarMin?: number;
+  priceSarMax?: number;
+  
+  // Per person pricing (if priceType === 'perPerson')
+  basePriceUsd?: number;
+  basePriceEtb?: number;
+  basePriceSar?: number;
+  persons?: PersonPrice[];
+  
+  // Discounts
+  discounts?: Discount[];
+  
   durationDays: number;
   departureCity: string;
   inclusions: string[];
@@ -226,6 +281,17 @@ export interface TeamMember {
   imageUrl: string;
   order: number;
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OfficeImage {
+  id: string;
+  title?: string;
+  imageUrl: string;
+  description?: string;
+  order?: number;
+  isActive?: boolean;
   createdAt: string;
   updatedAt: string;
 }
