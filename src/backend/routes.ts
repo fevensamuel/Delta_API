@@ -484,7 +484,6 @@ apiRouter.get('/packages', async (req: Request, res: Response) => {
   try {
     const rateData = await getExchangeRate();
     const rate = rateData.rate;
-    // ONLY show packages where isActive === true
     const packagesList = db.packages.filter(p => p.isActive === true);
     
     const data = packagesList.map(pkg => ({
@@ -504,6 +503,7 @@ apiRouter.get('/packages', async (req: Request, res: Response) => {
       priceSarMin: pkg.priceSarMin || null,
       priceSarMax: pkg.priceSarMax || null,
       discounts: pkg.discounts || [],
+      persons: pkg.persons || [], // ADD THIS
       durationDays: pkg.durationDays,
       departureCity: pkg.departureCity || 'Addis Ababa',
       inclusions: pkg.inclusions || [],
@@ -725,6 +725,7 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         priceType,
         priceUsdMin, priceUsdMax, priceEtbMin, priceEtbMax, priceSarMin, priceSarMax,
         discounts,
+        persons,
         durationDays, departureCity,
         inclusions, availableDates, itinerary, isActive
       } = req.body;
@@ -733,6 +734,7 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
       const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : (availableDates || []);
       const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : (itinerary || []);
       const parsedDiscounts = typeof discounts === 'string' ? JSON.parse(discounts) : (discounts || []);
+      const parsedPersons = typeof persons === 'string' ? JSON.parse(persons) : (persons !== undefined ? persons : existing.persons);
 
       const file = (req as any).file;
       let imageUrl = '';
@@ -870,6 +872,7 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
         priceType,
         priceUsdMin, priceUsdMax, priceEtbMin, priceEtbMax, priceSarMin, priceSarMax,
         discounts,
+        persons,
         durationDays, departureCity,
         inclusions, availableDates, itinerary, isActive,
         reason
@@ -946,6 +949,7 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
         updatedPkg.priceUsd = minUsd;
         updatedPkg.priceEtb = Math.round(minUsd * rate);
         updatedPkg.priceSar = Math.round(minUsd * 3.75);
+        updatedPkg.persons = Array.isArray(parsedPersons) ? parsedPersons : (existing.persons || []);
       } else {
         // Switching to single - use the provided price or existing
         const singleUsd = priceUsd !== undefined ? Number(priceUsd) : (existing.priceUsd || 0);
@@ -1045,13 +1049,43 @@ apiRouter.get('/admin/price-logs', authenticateJWT, (req: Request, res: Response
 // GALLERY (with video support)
 // ============================================================
 apiRouter.get('/gallery', (req: Request, res: Response) => {
-  let items = db.gallery.filter(g => g.isActive);
+  let items = db.gallery.filter(g => g.isActive !== false);
   const typeFilter = req.query.type ? String(req.query.type).toLowerCase() : null;
   if (typeFilter === 'photo' || typeFilter === 'video') {
     items = items.filter(g => g.type === typeFilter);
   }
   const sorted = [...items].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-  res.json({ status: 'success', success: true, count: sorted.length, data: sorted });
+  
+  // Ensure thumbnailUrl is included for all items
+  const formattedItems = sorted.map(item => {
+    // For videos, ensure thumbnailUrl is set
+    let thumbnailUrl = item.thumbnailUrl || '';
+    let imageUrl = item.imageUrl || '';
+    
+    // If it's a video and no thumbnail, use imageUrl as fallback
+    if (item.type === 'video') {
+      if (!thumbnailUrl && imageUrl) {
+        thumbnailUrl = imageUrl;
+      }
+      // If no imageUrl either, use a default
+      if (!thumbnailUrl) {
+        thumbnailUrl = ''; // Will show "No Image" in frontend
+      }
+    }
+    
+    return {
+      ...item,
+      thumbnailUrl: thumbnailUrl,
+      imageUrl: imageUrl,
+    };
+  });
+  
+  res.json({ 
+    status: 'success', 
+    success: true, 
+    count: formattedItems.length, 
+    data: formattedItems 
+  });
 });
 
 apiRouter.get('/gallery/:id', (req: Request, res: Response) => {
@@ -1088,13 +1122,18 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
 
     let imageUrl = body.imageUrl || body.image_url || '';
     let videoUrl = body.videoUrl || body.video_url || '';
-    let thumbnailUrl = '';
+    let thumbnailUrl = body.thumbnailUrl || '';
 
+    // Handle file uploads
     if (req.files) {
       const files = req.files as { [fieldname: string]: Express.Multer.File[] };
       if (files.image && files.image[0]) {
         const file = files.image[0];
         imageUrl = `/uploads/images/${file.filename}`;
+        // For photos, use imageUrl as thumbnail
+        if (type === 'photo') {
+          thumbnailUrl = imageUrl;
+        }
         console.log(`🖼️ Image uploaded: ${file.filename} -> ${imageUrl}`);
       }
       if (files.video && files.video[0]) {
@@ -1118,12 +1157,23 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
               .on('error', reject);
           });
           thumbnailUrl = `/uploads/images/${thumbnailFilename}`;
+          // Also set imageUrl to thumbnail for video
           imageUrl = thumbnailUrl;
           console.log(`🎬 Thumbnail generated: ${thumbnailFilename}`);
         } catch (ffmpegErr) {
           console.error('❌ Failed to generate video thumbnail:', ffmpegErr);
+          // If thumbnail generation fails, use a default or the video poster
+          thumbnailUrl = '';
         }
       }
+    }
+
+    // If video URL is provided (not file upload), try to set a thumbnail
+    if (type === 'video' && videoUrl && !imageUrl) {
+      // For YouTube videos, we can't generate a thumbnail server-side
+      // Use a default thumbnail or let frontend handle it
+      imageUrl = '';
+      thumbnailUrl = '';
     }
 
     if (!titleEn) {
@@ -1156,11 +1206,25 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
     };
 
     db.addGalleryItem(newItem);
-    res.status(201).json({ status: 'success', success: true, message: 'Gallery item created successfully', data: newItem });
+    res.status(201).json({ 
+      status: 'success', 
+      success: true, 
+      message: 'Gallery item created successfully', 
+      data: newItem 
+    });
   } catch (err: any) {
     console.error('Error creating gallery item:', err);
     res.status(500).json({ status: 'error', success: false, error: 'Failed to create gallery item.' });
   }
+});
+
+apiRouter.delete('/admin/gallery/:id', authenticateJWT, (req: Request, res: Response) => {
+  const index = db.gallery.findIndex(g => String(g.id) === String(req.params.id));
+  if (index === -1) {
+    return res.status(404).json({ status: 'error', success: false, error: 'Gallery item not found' });
+  }
+  db.deleteGalleryItem(index);
+  res.json({ status: 'success', success: true, message: 'Gallery item deleted successfully' });
 });
 
 // ============================================================

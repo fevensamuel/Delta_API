@@ -7,8 +7,8 @@
       "titleAm": "",
       "category": "Standard",
       "priceUsd": 190,
-      "priceEtb": 30000,
-      "priceSar": 150,
+      "priceEtb": 30396,
+      "priceSar": 713,
       "priceType": "single",
       "durationDays": 7,
       "departureCity": "Addis Ababa",
@@ -62,7 +62,17 @@
       "status": "Active",
       "whatsappClicks": 0,
       "createdAt": "2026-08-23T20:10:14.364Z",
-      "updatedAt": "2026-08-23T20:28:57.792Z"
+      "updatedAt": "2026-08-24T22:03:04.007Z",
+      "discounts": [
+        {
+          "id": "disc-1787608980557",
+          "type": "percentage",
+          "value": 20,
+          "label": "Family Discount",
+          "description": "",
+          "isActive": true
+        }
+      ]
     },
     {
       "id": "pkg-1787513199045",
@@ -404,7 +414,25 @@
       "updatedAt": "2026-08-23T19:23:02.927Z"
     }
   ],
-  "gallery": [],
+  "gallery": [
+    {
+      "id": "gal-1787606976272-304",
+      "type": "video",
+      "titleEn": "Snoop",
+      "titleAr": "",
+      "imageUrl": "",
+      "thumbnailUrl": "",
+      "videoUrl": "https://www.youtube.com/watch?v=qAv_0O8xZNk&list=RDqAv_0O8xZNk&start_radio=1",
+      "duration": "",
+      "location": "Snoop",
+      "description": "Dogg",
+      "isActive": true,
+      "sortOrder": 1,
+      "uploadDate": "2026-08-24",
+      "createdAt": "2026-08-24T21:29:36.272Z",
+      "updatedAt": "2026-08-24T21:29:36.272Z"
+    }
+  ],
   "adminUsers": [
     {
       "id": "usr-1",
@@ -412,7 +440,7 @@
       "email": "admin@deltatravel.com",
       "passwordHash": "$2b$10$iwv2kxHGrHS0Q93pcgq4He3KOu/2R2uP.8u.QVzN4k8dF/33UFThi",
       "role": "Admin",
-      "lastLogin": "2026-08-23T20:04:45.805Z",
+      "lastLogin": "2026-08-24T20:42:38.117Z",
       "isActive": true,
       "status": "Active",
       "createdAt": "2026-08-23T19:23:02.927Z",
@@ -431,6 +459,19 @@
   ],
   "socialLinks": [],
   "priceLogs": [
+    {
+      "id": "pl-1787608443628",
+      "packageId": "pkg-1787515814364",
+      "priceUsd": 190,
+      "priceEtb": 30396,
+      "priceSar": 713,
+      "previousPriceUsd": 190,
+      "previousPriceEtb": 30000,
+      "previousPriceSar": 150,
+      "reason": "Price updated via admin",
+      "updatedBy": "Admin",
+      "updatedAt": "2026-08-24T21:54:03.628Z"
+    },
     {
       "id": "pl-1787516937792",
       "packageId": "pkg-1787515814364",

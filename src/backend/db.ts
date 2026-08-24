@@ -296,6 +296,26 @@ class DatabaseStore {
         priceEtb: 77940,
         priceSar: 4871,
         priceType: 'single' as PriceType,
+
+        discounts: [],
+        persons: [
+      {
+        id: 'person-1',
+        name: 'Ahmed Mohammed',
+        email: 'ahmed@example.com',
+        phone: '+251911223344',
+        age: 35,
+        gender: 'Male'
+      },
+      {
+        id: 'person-2',
+        name: 'Fatima Zewde',
+        email: 'fatima@example.com',
+        phone: '+251911887766',
+        age: 28,
+        gender: 'Female'
+      }
+    ],
         
         durationDays: 6,
         departureCity: 'Addis Ababa',
@@ -486,10 +506,14 @@ class DatabaseStore {
     this.saveToFile();
   }
 
-  addGalleryItem(item: GalleryItem) {
-    this.gallery.unshift(item);
-    this.saveToFile();
+ addGalleryItem(item: GalleryItem) {
+  // Ensure thumbnailUrl is set for videos
+  if (item.type === 'video' && !item.thumbnailUrl) {
+    item.thumbnailUrl = item.imageUrl || '';
   }
+  this.gallery.unshift(item);
+  this.saveToFile();
+}
 
   addSubscriber(sub: Subscriber) {
     this.subscribers.unshift(sub);
