@@ -502,8 +502,8 @@ apiRouter.get('/packages', async (req: Request, res: Response) => {
       priceEtbMax: pkg.priceEtbMax || null,
       priceSarMin: pkg.priceSarMin || null,
       priceSarMax: pkg.priceSarMax || null,
-      discounts: pkg.discounts || [],
-      persons: pkg.persons || [], // ADD THIS
+      discounts: pkg.discounts || [], // <-- This includes discountType
+      persons: pkg.persons || [],
       durationDays: pkg.durationDays,
       departureCity: pkg.departureCity || 'Addis Ababa',
       inclusions: pkg.inclusions || [],
@@ -711,7 +711,7 @@ apiRouter.get('/admin/packages/:id', authenticateJWT, async (req: Request, res: 
   }
 });
 
-// ADMIN - CREATE PACKAGE
+// ADMIN - CREATE PACKAGE (FIXED)
 apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response) => {
   packageUploadMiddleware(req, res, async (err: any) => {
     if (err) {
@@ -730,11 +730,12 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         inclusions, availableDates, itinerary, isActive
       } = req.body;
 
+      // Parse JSON fields safely
       const parsedInclusions = typeof inclusions === 'string' ? JSON.parse(inclusions) : (inclusions || []);
       const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : (availableDates || []);
       const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : (itinerary || []);
       const parsedDiscounts = typeof discounts === 'string' ? JSON.parse(discounts) : (discounts || []);
-      const parsedPersons = typeof persons === 'string' ? JSON.parse(persons) : (persons !== undefined ? persons : existing.persons);
+      const parsedPersons = typeof persons === 'string' ? JSON.parse(persons) : (persons || []);
 
       const file = (req as any).file;
       let imageUrl = '';
@@ -745,6 +746,7 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         imageUrl = req.body.imageUrl;
       }
 
+      // Validation
       if (!titleEn || !titleEn.trim()) {
         return res.status(400).json({ status: 'error', success: false, error: 'English Title is required.' });
       }
@@ -777,6 +779,7 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
       const priceUsdNum = Number(priceUsd);
       const rate = 159.98;
 
+      // Build the package object
       const newPkg: any = {
         id: `pkg-${Date.now()}`,
         titleEn: titleEn.trim(),
@@ -797,9 +800,12 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         status: isActive !== undefined ? (Boolean(isActive) ? 'Active' : 'Inactive') : 'Active',
         whatsappClicks: 0,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        discounts: [],
+        persons: []
       };
 
+      // Add price range if priceType is 'range'
       if (finalPriceType === 'range') {
         newPkg.priceUsdMin = priceUsdMin ? Number(priceUsdMin) : priceUsdNum;
         newPkg.priceUsdMax = priceUsdMax ? Number(priceUsdMax) : priceUsdNum;
@@ -809,6 +815,7 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         newPkg.priceSarMax = priceSarMax ? Number(priceSarMax) : Math.round(priceUsdNum * 3.75);
       }
 
+      // Add discounts if provided
       if (Array.isArray(parsedDiscounts) && parsedDiscounts.length > 0) {
         newPkg.discounts = parsedDiscounts.map((d: any) => ({
           ...d,
@@ -817,8 +824,21 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
         }));
       }
 
+      // Add persons if provided
+      if (Array.isArray(parsedPersons) && parsedPersons.length > 0) {
+        newPkg.persons = parsedPersons.map((p: any) => ({
+          id: p.id || `person-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          name: p.name || '',
+          email: p.email || '',
+          phone: p.phone || '',
+          age: p.age || undefined,
+          gender: p.gender || undefined
+        }));
+      }
+
       db.addPackage(newPkg);
 
+      // Create initial price log
       const log: PriceLog = {
         id: `pl-${Date.now()}`,
         packageId: newPkg.id,
@@ -852,7 +872,7 @@ apiRouter.post('/admin/packages', authenticateJWT, (req: Request, res: Response)
   });
 });
 
-// ADMIN - UPDATE PACKAGE
+// ADMIN - UPDATE PACKAGE (FIXED)
 apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Response) => {
   packageUploadMiddleware(req, res, async (err: any) => {
     if (err) {
@@ -898,17 +918,17 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
       const validPriceTypes: PriceType[] = ['single', 'range'];
       const finalPriceType = (priceType && validPriceTypes.includes(priceType)) ? priceType : (existing.priceType || 'single');
 
+      // Parse JSON fields safely
       const parsedInclusions = typeof inclusions === 'string' ? JSON.parse(inclusions) : (inclusions !== undefined ? inclusions : existing.inclusions);
       const parsedAvailableDates = typeof availableDates === 'string' ? JSON.parse(availableDates) : (availableDates !== undefined ? availableDates : existing.availableDates);
       const parsedItinerary = typeof itinerary === 'string' ? JSON.parse(itinerary) : (itinerary !== undefined ? itinerary : existing.itinerary);
-      const parsedDiscounts = typeof discounts === 'string' ? JSON.parse(discounts) : (discounts !== undefined ? discounts : existing.discounts);
+      const parsedDiscounts = typeof discounts === 'string' ? JSON.parse(discounts) : (discounts !== undefined ? discounts : existing.discounts || []);
+      const parsedPersons = typeof persons === 'string' ? JSON.parse(persons) : (persons !== undefined ? persons : existing.persons || []);
 
       const rate = 159.98;
-      
-      // Get the price values - use existing if not provided
-      let priceUsdNew = priceUsd !== undefined ? Number(priceUsd) : existing.priceUsd;
-      let priceEtbNew = priceEtb !== undefined ? Number(priceEtb) : (existing.priceEtb || Math.round(priceUsdNew * rate));
-      let priceSarNew = priceSar !== undefined ? Number(priceSar) : (existing.priceSar || Math.round(priceUsdNew * 3.75));
+      const priceUsdNew = priceUsd !== undefined ? Number(priceUsd) : existing.priceUsd;
+      const priceEtbNew = priceEtb !== undefined ? Number(priceEtb) : (existing.priceEtb || Math.round(priceUsdNew * rate));
+      const priceSarNew = priceSar !== undefined ? Number(priceSar) : (existing.priceSar || Math.round(priceUsdNew * 3.75));
 
       // Build updated package - PRESERVE all existing data
       const updatedPkg: any = {
@@ -929,35 +949,29 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
         imageUrl: imageUrl,
         isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
         status: isActive !== undefined ? (Boolean(isActive) ? 'Active' : 'Inactive') : existing.status,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        discounts: Array.isArray(parsedDiscounts) ? parsedDiscounts : (existing.discounts || []),
+        persons: Array.isArray(parsedPersons) ? parsedPersons : (existing.persons || [])
       };
 
-      // Handle price range - support switching between single and range
+      // Handle price range
       if (finalPriceType === 'range') {
-        // When switching to range, use the provided min/max or fallback to current price
-        const minUsd = priceUsdMin !== undefined ? Number(priceUsdMin) : priceUsdNew;
-        const maxUsd = priceUsdMax !== undefined ? Number(priceUsdMax) : priceUsdNew;
-        
-        updatedPkg.priceUsdMin = minUsd;
-        updatedPkg.priceUsdMax = maxUsd;
-        updatedPkg.priceEtbMin = priceEtbMin !== undefined ? Number(priceEtbMin) : Math.round(minUsd * rate);
-        updatedPkg.priceEtbMax = priceEtbMax !== undefined ? Number(priceEtbMax) : Math.round(maxUsd * rate);
-        updatedPkg.priceSarMin = priceSarMin !== undefined ? Number(priceSarMin) : Math.round(minUsd * 3.75);
-        updatedPkg.priceSarMax = priceSarMax !== undefined ? Number(priceSarMax) : Math.round(maxUsd * 3.75);
-        
-        // Also update the main priceUsd to the min value for display purposes
-        updatedPkg.priceUsd = minUsd;
-        updatedPkg.priceEtb = Math.round(minUsd * rate);
-        updatedPkg.priceSar = Math.round(minUsd * 3.75);
-        updatedPkg.persons = Array.isArray(parsedPersons) ? parsedPersons : (existing.persons || []);
+        if (existing.priceType !== 'range') {
+          updatedPkg.priceUsdMin = priceUsdMin !== undefined ? Number(priceUsdMin) : existing.priceUsd;
+          updatedPkg.priceUsdMax = priceUsdMax !== undefined ? Number(priceUsdMax) : existing.priceUsd;
+          updatedPkg.priceEtbMin = priceEtbMin !== undefined ? Number(priceEtbMin) : (existing.priceEtb || Math.round(existing.priceUsd * rate));
+          updatedPkg.priceEtbMax = priceEtbMax !== undefined ? Number(priceEtbMax) : (existing.priceEtb || Math.round(existing.priceUsd * rate));
+          updatedPkg.priceSarMin = priceSarMin !== undefined ? Number(priceSarMin) : (existing.priceSar || Math.round(existing.priceUsd * 3.75));
+          updatedPkg.priceSarMax = priceSarMax !== undefined ? Number(priceSarMax) : (existing.priceSar || Math.round(existing.priceUsd * 3.75));
+        } else {
+          updatedPkg.priceUsdMin = priceUsdMin !== undefined ? Number(priceUsdMin) : (existing.priceUsdMin || existing.priceUsd);
+          updatedPkg.priceUsdMax = priceUsdMax !== undefined ? Number(priceUsdMax) : (existing.priceUsdMax || existing.priceUsd);
+          updatedPkg.priceEtbMin = priceEtbMin !== undefined ? Number(priceEtbMin) : (existing.priceEtbMin || Math.round(existing.priceUsd * rate));
+          updatedPkg.priceEtbMax = priceEtbMax !== undefined ? Number(priceEtbMax) : (existing.priceEtbMax || Math.round(existing.priceUsd * rate));
+          updatedPkg.priceSarMin = priceSarMin !== undefined ? Number(priceSarMin) : (existing.priceSarMin || Math.round(existing.priceUsd * 3.75));
+          updatedPkg.priceSarMax = priceSarMax !== undefined ? Number(priceSarMax) : (existing.priceSarMax || Math.round(existing.priceUsd * 3.75));
+        }
       } else {
-        // Switching to single - use the provided price or existing
-        const singleUsd = priceUsd !== undefined ? Number(priceUsd) : (existing.priceUsd || 0);
-        updatedPkg.priceUsd = singleUsd;
-        updatedPkg.priceEtb = priceEtb !== undefined ? Number(priceEtb) : Math.round(singleUsd * rate);
-        updatedPkg.priceSar = priceSar !== undefined ? Number(priceSar) : Math.round(singleUsd * 3.75);
-        
-        // Remove range fields
         delete updatedPkg.priceUsdMin;
         delete updatedPkg.priceUsdMax;
         delete updatedPkg.priceEtbMin;
@@ -966,21 +980,14 @@ apiRouter.put('/admin/packages/:id', authenticateJWT, (req: Request, res: Respon
         delete updatedPkg.priceSarMax;
       }
 
-      if (discounts !== undefined) {
-        updatedPkg.discounts = Array.isArray(parsedDiscounts) ? parsedDiscounts : [];
-      } else if (existing.discounts) {
-        updatedPkg.discounts = existing.discounts;
-      }
-
       // Check if prices changed for logging
-      const priceChanged = updatedPkg.priceUsd !== existing.priceUsd || 
-                          updatedPkg.priceEtb !== existing.priceEtb || 
-                          updatedPkg.priceSar !== existing.priceSar;
+      const priceChanged = priceUsdNew !== existing.priceUsd || 
+                          priceEtbNew !== existing.priceEtb || 
+                          priceSarNew !== existing.priceSar;
 
-      // Save the reason for the price log
       const updateReason = reason || (priceChanged ? 'Price updated via admin' : 'Package details updated');
 
-      // Update the package with the reason
+      // Update the package
       db.updatePackage(index, updatedPkg, updateReason);
       console.log(`✅ Package ${existing.id} updated successfully`);
 

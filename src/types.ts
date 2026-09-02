@@ -40,16 +40,20 @@ export interface PersonPrice {
 // Discount structure
 export interface Discount {
   id: string;
-  type: DiscountType; // 'percentage' or 'fixed'
-  value: number; // percentage (e.g., 15) or fixed amount (e.g., 50)
-  discountedPriceUsd?: number; // Calculated price after discount
+  type: DiscountType;
+  value: number;
+  discountedPriceUsd?: number;
   discountedPriceEtb?: number;
   discountedPriceSar?: number;
-  label: string; // e.g., "Family Discount", "Group Discount", "Senior Citizens"
+  label: string;
+  labelAr?: string;
   description?: string;
-  minPersons?: number; // Minimum persons for group discount
-  maxPersons?: number; // Maximum persons for group discount
-  ageGroup?: string; // e.g., "0-12", "13-17", "60+"
+  minPersons?: number; // For group/family discounts - minimum number of people
+  maxPersons?: number; // For group/family discounts - maximum number of people
+  ageGroup?: string; // For age-based discounts - e.g., "60+", "0-12", "13-17"
+  ageMin?: number; // For age-based discounts - minimum age
+  ageMax?: number; // For age-based discounts - maximum age
+  discountType: 'age' | 'group' | 'general'; // Type of discount
   isActive: boolean;
 }
 

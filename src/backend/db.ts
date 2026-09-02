@@ -131,174 +131,58 @@ class DatabaseStore {
 
     // Default Packages - WITH new pricing structure
     this.packages = [
+  {
+    id: 'pkg-1',
+    titleEn: 'Premium Umrah Package',
+    titleAr: 'باقة العمرة الممتازة',
+    titleAm: 'የተሻሻለ ዑምራ ፓኬጅ',
+    category: 'Premium' as PackageCategory,
+    
+    priceUsd: 2999,
+    priceEtb: 179940,
+    priceSar: 11246,
+    priceType: 'single' as PriceType,
+    
+    // Discounts with proper types
+    discounts: [
       {
-        id: 'pkg-1',
-        titleEn: 'Premium Umrah Package',
-        titleAr: 'باقة العمرة الممتازة',
-        titleAm: 'የተሻሻለ ዑምራ ፓኬጅ',
-        category: 'Premium' as PackageCategory,
-        
-        // Main pricing
-        priceUsd: 2999,
-        priceEtb: 179940,
-        priceSar: 11246,
-        priceType: 'single' as PriceType,
-        
-        durationDays: 10,
-        departureCity: 'Addis Ababa',
-        inclusions: [
-          'Return flights (Ethiopian Airlines)',
-          '3-star hotel in Makkah (Dar Al Eiman)',
-          '2-star hotel in Madinah (Anwar Al Madinah)',
-          'Private transport between cities',
-          'Daily breakfast and dinner',
-          'Guided ziyarat tours',
-          '24/7 support from Mutawwif'
-        ],
-        availableDates: ['2026-12-01', '2026-12-15', '2027-01-05'],
-        itinerary: [
-          {
-            dayNumber: 1,
-            title: 'Arrival in Madinah',
-            description: 'Arrive at Madinah Airport, transfer to hotel, rest and prepare for Umrah'
-          },
-          {
-            dayNumber: 2,
-            title: 'Madinah Ziyarat',
-            description: 'Visit Masjid Nabawi, Quba Mosque, Uhud Mountain, and other historical sites'
-          },
-          {
-            dayNumber: 3,
-            title: 'Travel to Makkah',
-            description: 'Travel to Makkah by private bus, check-in to hotel, prepare for Umrah'
-          },
-          {
-            dayNumber: 4,
-            title: 'Perform Umrah',
-            description: 'Perform Umrah rituals with guidance from Mutawwif'
-          },
-          {
-            dayNumber: 5,
-            title: 'Makkah Ziyarat',
-            description: 'Visit Arafat, Muzdalifah, Mina, and other significant sites'
-          },
-          {
-            dayNumber: 6,
-            title: 'Second Umrah',
-            description: 'Second Umrah opportunity for those who wish to perform again'
-          },
-          {
-            dayNumber: 7,
-            title: 'Free Day in Makkah',
-            description: 'Free time for prayer, reflection, and shopping'
-          },
-          {
-            dayNumber: 8,
-            title: 'Travel to Madinah',
-            description: 'Travel back to Madinah, check-in to hotel'
-          },
-          {
-            dayNumber: 9,
-            title: 'Madinah Ziyarat',
-            description: 'Additional Ziyarat in Madinah'
-          },
-          {
-            dayNumber: 10,
-            title: 'Departure',
-            description: 'Transfer to Madinah Airport for return flight'
-          }
-        ],
-        imageUrl: 'https://images.unsplash.com/photo-1583434103998-6b4f8a9d7d8a?auto=format&fit=crop&q=80&w=800',
-        isActive: true,
-        whatsappClicks: 0,
-        createdAt: now,
-        updatedAt: now
+        id: 'disc-1',
+        type: 'percentage',
+        value: 10,
+        label: 'Family Discount',
+        labelAr: 'خصم العائلة',
+        description: '10% off for families of 4 or more',
+        minPersons: 4,
+        maxPersons: 10,
+        discountType: 'group',
+        isActive: true
       },
       {
-        id: 'pkg-2',
-        titleEn: 'Standard Umrah Package',
-        titleAr: 'باقة العمرة القياسية',
-        titleAm: 'መደበኛ ዑምራ ፓኬጅ',
-        category: 'Standard' as PackageCategory,
-        
-        priceUsd: 1999,
-        priceEtb: 119940,
-        priceSar: 7496,
-        priceType: 'single' as PriceType,
-        
-        durationDays: 8,
-        departureCity: 'Addis Ababa',
-        inclusions: [
-          'Return flights (Saudia Airlines)',
-          '3-star hotel in Makkah',
-          '2-star hotel in Madinah',
-          'Shared transport between cities',
-          'Daily breakfast',
-          'Guided ziyarat tours'
-        ],
-        availableDates: ['2026-12-10', '2027-01-15'],
-        itinerary: [
-          {
-            dayNumber: 1,
-            title: 'Arrival in Madinah',
-            description: 'Arrive at Madinah Airport, transfer to hotel'
-          },
-          {
-            dayNumber: 2,
-            title: 'Madinah Ziyarat',
-            description: 'Visit Masjid Nabawi and other historical sites'
-          },
-          {
-            dayNumber: 3,
-            title: 'Travel to Makkah',
-            description: 'Travel to Makkah by bus, check-in to hotel'
-          },
-          {
-            dayNumber: 4,
-            title: 'Perform Umrah',
-            description: 'Perform Umrah rituals with guidance'
-          },
-          {
-            dayNumber: 5,
-            title: 'Makkah Ziyarat',
-            description: 'Visit significant sites around Makkah'
-          },
-          {
-            dayNumber: 6,
-            title: 'Free Day',
-            description: 'Free time for prayer and reflection'
-          },
-          {
-            dayNumber: 7,
-            title: 'Travel to Madinah',
-            description: 'Travel back to Madinah'
-          },
-          {
-            dayNumber: 8,
-            title: 'Departure',
-            description: 'Transfer to Madinah Airport for return flight'
-          }
-        ],
-        imageUrl: 'https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&q=80&w=800',
-        isActive: true,
-        whatsappClicks: 0,
-        createdAt: now,
-        updatedAt: now
+        id: 'disc-2',
+        type: 'percentage',
+        value: 15,
+        label: 'Senior Citizens',
+        labelAr: 'كبار السن',
+        description: '15% off for seniors aged 60 and above',
+        ageMin: 60,
+        ageMax: 120,
+        discountType: 'age',
+        isActive: true
       },
       {
-        id: 'pkg-3',
-        titleEn: 'Economy Umrah Package',
-        titleAr: 'باقة العمرة الاقتصادية',
-        titleAm: 'ኢኮኖሚ ዑምራ ፓኬጅ',
-        category: 'Economy' as PackageCategory,
-        
-        priceUsd: 1299,
-        priceEtb: 77940,
-        priceSar: 4871,
-        priceType: 'single' as PriceType,
-
-        discounts: [],
-        persons: [
+        id: 'disc-3',
+        type: 'fixed',
+        value: 200,
+        label: 'Group Discount',
+        labelAr: 'خصم المجموعة',
+        description: '$200 off for groups of 10 or more',
+        minPersons: 10,
+        discountType: 'group',
+        isActive: true
+      }
+    ],
+    
+    persons: [
       {
         id: 'person-1',
         name: 'Ahmed Mohammed',
@@ -316,56 +200,261 @@ class DatabaseStore {
         gender: 'Female'
       }
     ],
-        
-        durationDays: 6,
-        departureCity: 'Addis Ababa',
-        inclusions: [
-          'Return flights (Flydubai)',
-          '2-star hotel in Makkah',
-          '1-star hotel in Madinah',
-          'Shared transport between cities',
-          'Daily breakfast'
-        ],
-        availableDates: ['2027-01-20', '2027-02-10'],
-        itinerary: [
-          {
-            dayNumber: 1,
-            title: 'Arrival in Madinah',
-            description: 'Arrive at Madinah Airport, transfer to hotel'
-          },
-          {
-            dayNumber: 2,
-            title: 'Madinah Ziyarat',
-            description: 'Visit Masjid Nabawi'
-          },
-          {
-            dayNumber: 3,
-            title: 'Travel to Makkah',
-            description: 'Travel to Makkah by bus'
-          },
-          {
-            dayNumber: 4,
-            title: 'Perform Umrah',
-            description: 'Perform Umrah rituals'
-          },
-          {
-            dayNumber: 5,
-            title: 'Free Day',
-            description: 'Free time for prayer'
-          },
-          {
-            dayNumber: 6,
-            title: 'Departure',
-            description: 'Transfer to airport for return flight'
-          }
-        ],
-        imageUrl: 'https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&q=80&w=800',
-        isActive: true,
-        whatsappClicks: 0,
-        createdAt: now,
-        updatedAt: now
+    
+    durationDays: 10,
+    departureCity: 'Addis Ababa',
+    inclusions: [
+      'Return flights (Ethiopian Airlines)',
+      '3-star hotel in Makkah (Dar Al Eiman)',
+      '2-star hotel in Madinah (Anwar Al Madinah)',
+      'Private transport between cities',
+      'Daily breakfast and dinner',
+      'Guided ziyarat tours',
+      '24/7 support from Mutawwif'
+    ],
+    availableDates: ['2026-12-01', '2026-12-15', '2027-01-05'],
+    itinerary: [
+      {
+        dayNumber: 1,
+        title: 'Arrival in Madinah',
+        description: 'Arrive at Madinah Airport, transfer to hotel, rest and prepare for Umrah'
+      },
+      {
+        dayNumber: 2,
+        title: 'Madinah Ziyarat',
+        description: 'Visit Masjid Nabawi, Quba Mosque, Uhud Mountain, and other historical sites'
+      },
+      {
+        dayNumber: 3,
+        title: 'Travel to Makkah',
+        description: 'Travel to Makkah by private bus, check-in to hotel, prepare for Umrah'
+      },
+      {
+        dayNumber: 4,
+        title: 'Perform Umrah',
+        description: 'Perform Umrah rituals with guidance from Mutawwif'
+      },
+      {
+        dayNumber: 5,
+        title: 'Makkah Ziyarat',
+        description: 'Visit Arafat, Muzdalifah, Mina, and other significant sites'
+      },
+      {
+        dayNumber: 6,
+        title: 'Second Umrah',
+        description: 'Second Umrah opportunity for those who wish to perform again'
+      },
+      {
+        dayNumber: 7,
+        title: 'Free Day in Makkah',
+        description: 'Free time for prayer, reflection, and shopping'
+      },
+      {
+        dayNumber: 8,
+        title: 'Travel to Madinah',
+        description: 'Travel back to Madinah, check-in to hotel'
+      },
+      {
+        dayNumber: 9,
+        title: 'Madinah Ziyarat',
+        description: 'Additional Ziyarat in Madinah'
+      },
+      {
+        dayNumber: 10,
+        title: 'Departure',
+        description: 'Transfer to Madinah Airport for return flight'
       }
-    ];
+    ],
+    imageUrl: 'https://images.unsplash.com/photo-1583434103998-6b4f8a9d7d8a?auto=format&fit=crop&q=80&w=800',
+    isActive: true,
+    whatsappClicks: 0,
+    createdAt: now,
+    updatedAt: now
+  },
+  {
+    id: 'pkg-2',
+    titleEn: 'Standard Umrah Package',
+    titleAr: 'باقة العمرة القياسية',
+    titleAm: 'መደበኛ ዑምራ ፓኬጅ',
+    category: 'Standard' as PackageCategory,
+    
+    priceUsd: 1999,
+    priceEtb: 119940,
+    priceSar: 7496,
+    priceType: 'single' as PriceType,
+    
+    discounts: [
+      {
+        id: 'disc-4',
+        type: 'percentage',
+        value: 10,
+        label: 'Family Discount',
+        labelAr: 'خصم العائلة',
+        description: '10% off for families of 4 or more',
+        minPersons: 4,
+        discountType: 'group',
+        isActive: true
+      },
+      {
+        id: 'disc-5',
+        type: 'percentage',
+        value: 20,
+        label: 'Student Discount',
+        labelAr: 'خصم الطلاب',
+        description: '20% off for students with valid ID',
+        discountType: 'general',
+        isActive: true
+      }
+    ],
+    
+    persons: [],
+    
+    durationDays: 8,
+    departureCity: 'Addis Ababa',
+    inclusions: [
+      'Return flights (Saudia Airlines)',
+      '3-star hotel in Makkah',
+      '2-star hotel in Madinah',
+      'Shared transport between cities',
+      'Daily breakfast',
+      'Guided ziyarat tours'
+    ],
+    availableDates: ['2026-12-10', '2027-01-15'],
+    itinerary: [
+      {
+        dayNumber: 1,
+        title: 'Arrival in Madinah',
+        description: 'Arrive at Madinah Airport, transfer to hotel'
+      },
+      {
+        dayNumber: 2,
+        title: 'Madinah Ziyarat',
+        description: 'Visit Masjid Nabawi and other historical sites'
+      },
+      {
+        dayNumber: 3,
+        title: 'Travel to Makkah',
+        description: 'Travel to Makkah by bus, check-in to hotel'
+      },
+      {
+        dayNumber: 4,
+        title: 'Perform Umrah',
+        description: 'Perform Umrah rituals with guidance'
+      },
+      {
+        dayNumber: 5,
+        title: 'Makkah Ziyarat',
+        description: 'Visit significant sites around Makkah'
+      },
+      {
+        dayNumber: 6,
+        title: 'Free Day',
+        description: 'Free time for prayer and reflection'
+      },
+      {
+        dayNumber: 7,
+        title: 'Travel to Madinah',
+        description: 'Travel back to Madinah'
+      },
+      {
+        dayNumber: 8,
+        title: 'Departure',
+        description: 'Transfer to Madinah Airport for return flight'
+      }
+    ],
+    imageUrl: 'https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&q=80&w=800',
+    isActive: true,
+    whatsappClicks: 0,
+    createdAt: now,
+    updatedAt: now
+  },
+  {
+    id: 'pkg-3',
+    titleEn: 'Economy Umrah Package',
+    titleAr: 'باقة العمرة الاقتصادية',
+    titleAm: 'ኢኮኖሚ ዑምራ ፓኬጅ',
+    category: 'Economy' as PackageCategory,
+    
+    priceUsd: 1299,
+    priceEtb: 77940,
+    priceSar: 4871,
+    priceType: 'single' as PriceType,
+    
+    discounts: [
+      {
+        id: 'disc-6',
+        type: 'percentage',
+        value: 5,
+        label: 'Early Bird Discount',
+        labelAr: 'خصم التسجيل المبكر',
+        description: '5% off for bookings made 60+ days in advance',
+        discountType: 'general',
+        isActive: true
+      },
+      {
+        id: 'disc-7',
+        type: 'fixed',
+        value: 50,
+        label: 'Group Discount',
+        labelAr: 'خصم المجموعة',
+        description: '$50 off for groups of 5 or more',
+        minPersons: 5,
+        discountType: 'group',
+        isActive: true
+      }
+    ],
+    
+    persons: [],
+    
+    durationDays: 6,
+    departureCity: 'Addis Ababa',
+    inclusions: [
+      'Return flights (Flydubai)',
+      '2-star hotel in Makkah',
+      '1-star hotel in Madinah',
+      'Shared transport between cities',
+      'Daily breakfast'
+    ],
+    availableDates: ['2027-01-20', '2027-02-10'],
+    itinerary: [
+      {
+        dayNumber: 1,
+        title: 'Arrival in Madinah',
+        description: 'Arrive at Madinah Airport, transfer to hotel'
+      },
+      {
+        dayNumber: 2,
+        title: 'Madinah Ziyarat',
+        description: 'Visit Masjid Nabawi'
+      },
+      {
+        dayNumber: 3,
+        title: 'Travel to Makkah',
+        description: 'Travel to Makkah by bus'
+      },
+      {
+        dayNumber: 4,
+        title: 'Perform Umrah',
+        description: 'Perform Umrah rituals'
+      },
+      {
+        dayNumber: 5,
+        title: 'Free Day',
+        description: 'Free time for prayer'
+      },
+      {
+        dayNumber: 6,
+        title: 'Departure',
+        description: 'Transfer to airport for return flight'
+      }
+    ],
+    imageUrl: 'https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&q=80&w=800',
+    isActive: true,
+    whatsappClicks: 0,
+    createdAt: now,
+    updatedAt: now
+  }
+];
 
     // Default Office Images - Empty (no placeholders)
     this.officeImages = [];
