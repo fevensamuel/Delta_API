@@ -1055,6 +1055,29 @@ apiRouter.get('/admin/price-logs', authenticateJWT, (req: Request, res: Response
 // ============================================================
 // GALLERY (with video support)
 // ============================================================
+// Helper function to extract YouTube video ID
+function extractYouTubeVideoId(url: string): string | null {
+  if (!url) return null;
+  
+  if (url.includes('youtu.be/')) {
+    return url.split('youtu.be/')[1]?.split('?')[0] || null;
+  }
+  if (url.includes('watch?v=')) {
+    return url.split('watch?v=')[1]?.split('&')[0] || null;
+  }
+  if (url.includes('youtube.com/embed/')) {
+    return url.split('youtube.com/embed/')[1]?.split('?')[0] || null;
+  }
+  if (url.includes('youtube.com/v/')) {
+    return url.split('youtube.com/v/')[1]?.split('?')[0] || null;
+  }
+  if (url.includes('youtube.com/shorts/')) {
+    return url.split('youtube.com/shorts/')[1]?.split('?')[0] || null;
+  }
+  
+  return null;
+}
+
 apiRouter.get('/gallery', (req: Request, res: Response) => {
   let items = db.gallery.filter(g => g.isActive !== false);
   const typeFilter = req.query.type ? String(req.query.type).toLowerCase() : null;
@@ -1063,20 +1086,16 @@ apiRouter.get('/gallery', (req: Request, res: Response) => {
   }
   const sorted = [...items].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   
-  // Ensure thumbnailUrl is included for all items
   const formattedItems = sorted.map(item => {
-    // For videos, ensure thumbnailUrl is set
     let thumbnailUrl = item.thumbnailUrl || '';
     let imageUrl = item.imageUrl || '';
     
-    // If it's a video and no thumbnail, use imageUrl as fallback
     if (item.type === 'video') {
       if (!thumbnailUrl && imageUrl) {
         thumbnailUrl = imageUrl;
       }
-      // If no imageUrl either, use a default
       if (!thumbnailUrl) {
-        thumbnailUrl = ''; // Will show "No Image" in frontend
+        thumbnailUrl = '';
       }
     }
     
@@ -1103,7 +1122,6 @@ apiRouter.get('/gallery/:id', (req: Request, res: Response) => {
   res.json({ status: 'success', success: true, data: item });
 });
 
-// GET all gallery items (admin)
 apiRouter.get('/admin/gallery', authenticateJWT, (req: Request, res: Response) => {
   const typeFilter = req.query.type ? String(req.query.type).toLowerCase() : null;
   let items = db.gallery;
@@ -1137,7 +1155,6 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
       if (files.image && files.image[0]) {
         const file = files.image[0];
         imageUrl = `/uploads/images/${file.filename}`;
-        // For photos, use imageUrl as thumbnail
         if (type === 'photo') {
           thumbnailUrl = imageUrl;
         }
@@ -1148,7 +1165,6 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
         videoUrl = `/uploads/videos/${file.filename}`;
         console.log(`🎬 Video uploaded: ${file.filename} -> ${videoUrl}`);
 
-        // Generate thumbnail from video
         const videoPath = path.join(uploadPaths.videosPath, file.filename);
         const thumbnailFilename = `thumb-${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
         try {
@@ -1164,23 +1180,25 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
               .on('error', reject);
           });
           thumbnailUrl = `/uploads/images/${thumbnailFilename}`;
-          // Also set imageUrl to thumbnail for video
           imageUrl = thumbnailUrl;
           console.log(`🎬 Thumbnail generated: ${thumbnailFilename}`);
         } catch (ffmpegErr) {
           console.error('❌ Failed to generate video thumbnail:', ffmpegErr);
-          // If thumbnail generation fails, use a default or the video poster
           thumbnailUrl = '';
         }
       }
     }
 
-    // If video URL is provided (not file upload), try to set a thumbnail
-    if (type === 'video' && videoUrl && !imageUrl) {
-      // For YouTube videos, we can't generate a thumbnail server-side
-      // Use a default thumbnail or let frontend handle it
-      imageUrl = '';
-      thumbnailUrl = '';
+    // If video URL is provided, check if it's YouTube and get thumbnail
+    if (type === 'video' && videoUrl) {
+      if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
+        const videoId = extractYouTubeVideoId(videoUrl);
+        if (videoId) {
+          thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+          imageUrl = thumbnailUrl;
+          console.log(`🎬 YouTube thumbnail set: ${thumbnailUrl}`);
+        }
+      }
     }
 
     if (!titleEn) {
@@ -1223,6 +1241,162 @@ apiRouter.post('/admin/gallery', authenticateJWT, galleryUploadFields, async (re
     console.error('Error creating gallery item:', err);
     res.status(500).json({ status: 'error', success: false, error: 'Failed to create gallery item.' });
   }
+});
+
+// BULK UPLOAD GALLERY ITEMS
+apiRouter.post('/admin/gallery/bulk', authenticateJWT, bulkUpload, async (req: Request, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    const body = req.body || {};
+    
+    let items: any[] = [];
+    try {
+      if (body.items) {
+        items = typeof body.items === 'string' ? JSON.parse(body.items) : body.items;
+      }
+    } catch (e) {
+      console.error('Failed to parse items:', e);
+      return res.status(400).json({ status: 'error', success: false, error: 'Invalid items data' });
+    }
+
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const itemData = items[i] || {};
+        
+        const isVideo = file.mimetype.startsWith('video/');
+        const type = isVideo ? 'video' : 'photo';
+        
+        let imageUrl = '';
+        let videoUrl = '';
+        let thumbnailUrl = '';
+        
+        if (isVideo) {
+          videoUrl = `/uploads/videos/${file.filename}`;
+          const videoPath = path.join(uploadPaths.videosPath, file.filename);
+          const thumbnailFilename = `thumb-${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
+          try {
+            await new Promise((resolve, reject) => {
+              ffmpeg(videoPath)
+                .screenshots({
+                  timestamps: [1],
+                  filename: thumbnailFilename,
+                  folder: uploadPaths.imagesPath,
+                  size: '320x180'
+                })
+                .on('end', resolve)
+                .on('error', reject);
+            });
+            thumbnailUrl = `/uploads/images/${thumbnailFilename}`;
+            imageUrl = thumbnailUrl;
+            console.log(`🎬 Thumbnail generated for bulk upload: ${thumbnailFilename}`);
+          } catch (ffmpegErr) {
+            console.error('❌ Failed to generate video thumbnail:', ffmpegErr);
+            thumbnailUrl = '';
+          }
+        } else {
+          imageUrl = `/uploads/images/${file.filename}`;
+          thumbnailUrl = imageUrl;
+        }
+        
+        // Check if it's a YouTube URL for video URL input
+        const isYouTube = itemData.videoUrl && (itemData.videoUrl.includes('youtube.com') || itemData.videoUrl.includes('youtu.be'));
+        if (isYouTube) {
+          const videoId = extractYouTubeVideoId(itemData.videoUrl);
+          if (videoId) {
+            thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+            imageUrl = thumbnailUrl;
+          }
+        }
+        
+        const now = new Date().toISOString();
+        const newItem: GalleryItem = {
+          id: `gal-${Date.now()}-${Math.floor(Math.random() * 1000)}-${i}`,
+          type: type as GalleryType,
+          titleEn: itemData.titleEn || file.originalname || `Untitled ${type}`,
+          titleAr: itemData.titleAr || '',
+          imageUrl: imageUrl || '',
+          thumbnailUrl: thumbnailUrl || imageUrl || '',
+          videoUrl: isVideo ? videoUrl : (itemData.videoUrl || ''),
+          duration: itemData.duration || '',
+          location: itemData.location || 'Makkah Al-Mukarramah',
+          description: itemData.description || '',
+          isActive: itemData.isActive !== undefined ? itemData.isActive : true,
+          sortOrder: itemData.sortOrder || 0,
+          uploadDate: now.substring(0, 10),
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        db.addGalleryItem(newItem);
+        items[i] = newItem;
+      }
+      
+      res.status(201).json({
+        status: 'success',
+        success: true,
+        message: `Successfully uploaded ${files.length} items`,
+        data: items
+      });
+    } else {
+      const createdItems = [];
+      for (const itemData of items) {
+        const isYouTube = itemData.videoUrl && (itemData.videoUrl.includes('youtube.com') || itemData.videoUrl.includes('youtu.be'));
+        let thumbnailUrl = '';
+        let imageUrl = '';
+        
+        if (isYouTube) {
+          const videoId = extractYouTubeVideoId(itemData.videoUrl);
+          if (videoId) {
+            thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+            imageUrl = thumbnailUrl;
+          }
+        }
+        
+        const now = new Date().toISOString();
+        const newItem: GalleryItem = {
+          id: `gal-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          type: itemData.type || 'video',
+          titleEn: itemData.titleEn || 'Untitled',
+          titleAr: itemData.titleAr || '',
+          imageUrl: imageUrl || itemData.imageUrl || '',
+          thumbnailUrl: thumbnailUrl || itemData.thumbnailUrl || imageUrl || '',
+          videoUrl: itemData.videoUrl || '',
+          duration: itemData.duration || '',
+          location: itemData.location || 'Makkah Al-Mukarramah',
+          description: itemData.description || '',
+          isActive: itemData.isActive !== undefined ? itemData.isActive : true,
+          sortOrder: itemData.sortOrder || 0,
+          uploadDate: now.substring(0, 10),
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        db.addGalleryItem(newItem);
+        createdItems.push(newItem);
+      }
+      
+      res.status(201).json({
+        status: 'success',
+        success: true,
+        message: `Successfully created ${createdItems.length} items`,
+        data: createdItems
+      });
+    }
+  } catch (err: any) {
+    console.error('Error in bulk upload:', err);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to bulk upload gallery items.' });
+  }
+});
+
+// DELETE GALLERY ITEM
+apiRouter.delete('/admin/gallery/:id', authenticateJWT, (req: Request, res: Response) => {
+  const index = db.gallery.findIndex(g => String(g.id) === String(req.params.id));
+  if (index === -1) {
+    return res.status(404).json({ status: 'error', success: false, error: 'Gallery item not found' });
+  }
+  db.deleteGalleryItem(index);
+  res.json({ status: 'success', success: true, message: 'Gallery item deleted successfully' });
 });
 
 apiRouter.delete('/admin/gallery/:id', authenticateJWT, (req: Request, res: Response) => {
