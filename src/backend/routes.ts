@@ -636,6 +636,7 @@ apiRouter.get('/admin/packages', authenticateJWT, async (req: Request, res: Resp
       priceSarMin: pkg.priceSarMin || null,
       priceSarMax: pkg.priceSarMax || null,
       discounts: pkg.discounts || [],
+      persons: pkg.persons || [],  // ✅ IMPORTANT: Include persons
       durationDays: pkg.durationDays,
       departureCity: pkg.departureCity || 'Addis Ababa',
       inclusions: pkg.inclusions || [],
@@ -1411,116 +1412,269 @@ apiRouter.delete('/admin/gallery/:id', authenticateJWT, (req: Request, res: Resp
 // ============================================================
 // INQUIRIES
 // ============================================================
+
+// GET all inquiries
 apiRouter.get('/admin/inquiries', authenticateJWT, (req: Request, res: Response) => {
-  res.json({
-    status: 'success',
-    success: true,
-    count: db.inquiries.length,
-    data: db.inquiries
-  });
+  try {
+    const sorted = [...db.inquiries].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    res.json({ 
+      status: 'success', 
+      success: true, 
+      count: sorted.length, 
+      data: sorted 
+    });
+  } catch (error) {
+    console.error('❌ Error fetching inquiries:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to fetch inquiries' });
+  }
 });
 
+// CREATE inquiry (public)
 apiRouter.post('/inquiries', (req: Request, res: Response) => {
-  const { fullName, phone, email, subject, message, source } = req.body;
-
-  if (!fullName || !phone || !message) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: 'Missing required fields (fullName, phone, message)'
-    });
+  try {
+    const { fullName, phone, email, subject, message, source } = req.body;
+    if (!fullName || !phone || !message) {
+      return res.status(400).json({ status: 'error', success: false, error: 'Missing required fields' });
+    }
+    const now = new Date().toISOString();
+    const newInquiry = {
+      id: `inq-${Date.now()}`,
+      fullName,
+      phone,
+      email: email || '',
+      subject: subject || 'Umrah Tour Inquiry',
+      message,
+      source: source || 'Contact Form',
+      status: 'New' as InquiryStatus,
+      dateReceived: now,
+      createdAt: now,
+      updatedAt: now
+    };
+    db.inquiries.unshift(newInquiry);
+    db.saveToFile();
+    res.status(201).json({ status: 'success', success: true, message: 'Inquiry submitted', data: newInquiry });
+  } catch (error) {
+    console.error('❌ Error creating inquiry:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to create inquiry' });
   }
-
-  const now = new Date().toISOString();
-  const newInquiry = {
-    id: `inq-${Date.now()}`,
-    fullName,
-    phone,
-    email: email || '',
-    subject: subject || 'Umrah Tour Inquiry',
-    message,
-    source: source || 'Contact Form',
-    status: 'New',
-    createdAt: now,
-    updatedAt: now
-  };
-
-  db.inquiries.unshift(newInquiry);
-  db.saveToFile();
-
-  res.status(201).json({
-    status: 'success',
-    success: true,
-    message: 'Inquiry submitted successfully',
-    data: newInquiry
-  });
 });
 
-const handleUpdateInquiryStatus = (req: Request, res: Response) => {
-  const inquiry = db.inquiries.find(i => String(i.id) === String(req.params.id));
-
-  if (!inquiry) {
-    return res.status(404).json({ status: 'error', success: false, error: 'Inquiry not found' });
-  }
-
-  const { status } = req.body;
-  const validStatuses: InquiryStatus[] = ['New', 'Contacted', 'Resolved'];
-
-  if (!status || !validStatuses.includes(status as InquiryStatus)) {
-    return res.status(400).json({
-      status: 'error',
-      success: false,
-      error: `Status must be one of: ${validStatuses.join(', ')}`
+// ⚠️ IMPORTANT: BULK STATUS MUST COME BEFORE THE :id ROUTE ⚠️
+// BULK UPDATE INQUIRIES
+apiRouter.put('/admin/inquiries/bulk-status', authenticateJWT, (req: Request, res: Response) => {
+  console.log('🔥 BULK STATUS ENDPOINT HIT!');
+  console.log('📥 Request body:', req.body);
+  
+  try {
+    const { ids, status } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ 
+        status: 'error', 
+        success: false, 
+        error: 'No inquiry IDs provided' 
+      });
+    }
+    
+    const validStatuses: InquiryStatus[] = ['New', 'Contacted', 'Resolved'];
+    if (!status || !validStatuses.includes(status as InquiryStatus)) {
+      return res.status(400).json({ 
+        status: 'error', 
+        success: false, 
+        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` 
+      });
+    }
+    
+    let updatedCount = 0;
+    const updatedInquiries = [];
+    
+    for (const id of ids) {
+      const inquiry = db.inquiries.find(i => String(i.id) === String(id));
+      if (inquiry) {
+        inquiry.status = status as InquiryStatus;
+        inquiry.updatedAt = new Date().toISOString();
+        updatedCount++;
+        updatedInquiries.push(inquiry);
+      }
+    }
+    
+    db.saveToFile();
+    
+    console.log(`✅ Updated ${updatedCount} inquiries to ${status}`);
+    
+    res.json({
+      status: 'success',
+      success: true,
+      message: `Updated ${updatedCount} inquiries to ${status}`,
+      data: {
+        updatedCount,
+        updatedInquiries
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ Bulk status update error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      success: false, 
+      error: 'Failed to update inquiry statuses' 
     });
   }
+});
 
-  inquiry.status = status as InquiryStatus;
-  inquiry.updatedAt = new Date().toISOString();
-  db.saveToFile();
+// UPDATE single inquiry
+apiRouter.put('/admin/inquiries/:id', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const inquiry = db.inquiries.find(i => String(i.id) === String(req.params.id));
+    if (!inquiry) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Inquiry not found' });
+    }
+    const { status } = req.body;
+    const validStatuses: InquiryStatus[] = ['New', 'Contacted', 'Resolved'];
+    if (!status || !validStatuses.includes(status as InquiryStatus)) {
+      return res.status(400).json({ status: 'error', success: false, error: 'Invalid status' });
+    }
+    inquiry.status = status as InquiryStatus;
+    inquiry.updatedAt = new Date().toISOString();
+    db.saveToFile();
+    res.json({ status: 'success', success: true, message: 'Inquiry updated', data: inquiry });
+  } catch (error) {
+    console.error('❌ Error updating inquiry:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to update inquiry' });
+  }
+});
 
-  res.json({
-    status: 'success',
-    success: true,
-    message: 'Inquiry status updated',
-    data: inquiry
-  });
-};
+// DELETE single inquiry
+apiRouter.delete('/admin/inquiries/:id', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const index = db.inquiries.findIndex(i => String(i.id) === String(req.params.id));
+    if (index === -1) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Inquiry not found' });
+    }
+    db.deleteInquiry(index);
+    res.json({ status: 'success', success: true, message: 'Inquiry deleted' });
+  } catch (error) {
+    console.error('❌ Error deleting inquiry:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to delete inquiry' });
+  }
+});
 
-apiRouter.put('/admin/inquiries/:id/status', authenticateJWT, handleUpdateInquiryStatus);
-apiRouter.put('/admin/inquiries/:id', authenticateJWT, handleUpdateInquiryStatus);
+// BULK DELETE INQUIRIES
+apiRouter.delete('/admin/inquiries/bulk-delete', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ status: 'error', success: false, error: 'No inquiry IDs provided' });
+    }
+    let deletedCount = 0;
+    for (let i = db.inquiries.length - 1; i >= 0; i--) {
+      if (ids.includes(String(db.inquiries[i].id))) {
+        db.inquiries.splice(i, 1);
+        deletedCount++;
+      }
+    }
+    db.saveToFile();
+    res.json({ status: 'success', success: true, message: `Deleted ${deletedCount} inquiries` });
+  } catch (error) {
+    console.error('❌ Error bulk deleting inquiries:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to delete inquiries' });
+  }
+});
 
 // ============================================================
 // SMS CAMPAIGNS
 // ============================================================
 apiRouter.post('/admin/sms/campaign', authenticateJWT, (req: Request, res: Response) => {
-  const { message, recipientFilter, channelFilter, packageInterestId, sendToAll } = req.body;
+  const { message, recipientFilter, channelFilter, packageInterestId, sendToAll, recipientType, packageId } = req.body;
 
   if (!message) {
     return res.status(400).json({ status: 'error', success: false, error: 'Message content is required' });
   }
 
-  let recipients = db.subscribers.filter(s => s.optInStatus);
+  let recipients: any[] = [];
+  let recipientPhones: string[] = [];
+  let recipientTypeLabel = '';
 
-  if (recipientFilter && typeof recipientFilter === 'string') {
-    if (recipientFilter.startsWith('channel:')) {
-      const channel = recipientFilter.replace('channel:', '');
-      recipients = recipients.filter(s => s.channel.toLowerCase() === channel.toLowerCase());
-    } else if (recipientFilter.startsWith('package:')) {
-      const pkgId = recipientFilter.replace('package:', '');
-      recipients = recipients.filter(s => String(s.packageInterestId) === String(pkgId));
+  // Determine recipient type
+  const recType = recipientType || 'subscribers';
+
+  if (recType === 'persons') {
+    // Get persons from packages
+    recipientTypeLabel = 'Persons on Package';
+    
+    if (packageId) {
+      // Get persons from specific package
+      const pkg = db.packages.find(p => String(p.id) === String(packageId));
+      if (pkg && pkg.persons && Array.isArray(pkg.persons)) {
+        recipients = pkg.persons.map((p: any) => ({
+          phone: p.phone,
+          name: p.name || '',
+          email: p.email || '',
+          packageTitle: pkg.titleEn
+        }));
+        recipientPhones = recipients.map(r => r.phone);
+        console.log(`📱 Found ${recipients.length} persons in package "${pkg.titleEn}"`);
+      }
+    } else {
+      // Get all persons from all packages
+      db.packages.forEach(pkg => {
+        if (pkg.persons && Array.isArray(pkg.persons)) {
+          pkg.persons.forEach((p: any) => {
+            if (p.phone) {
+              recipients.push({
+                phone: p.phone,
+                name: p.name || '',
+                email: p.email || '',
+                packageTitle: pkg.titleEn
+              });
+            }
+          });
+        }
+      });
+      recipientPhones = recipients.map(r => r.phone);
+      console.log(`📱 Found ${recipients.length} total persons across all packages`);
     }
-  } else if (sendToAll === false) {
-    if (channelFilter) {
-      recipients = recipients.filter(s => s.channel === channelFilter);
+  } else {
+    // Default: Get subscribers
+    recipientTypeLabel = 'SMS Subscribers';
+    let subscribers = db.subscribers.filter(s => s.optInStatus === 'Active' || s.optInStatus === true);
+
+    if (recipientFilter && typeof recipientFilter === 'string') {
+      if (recipientFilter.startsWith('channel:')) {
+        const channel = recipientFilter.replace('channel:', '');
+        subscribers = subscribers.filter(s => s.channel?.toLowerCase() === channel.toLowerCase());
+      } else if (recipientFilter.startsWith('package:')) {
+        const pkgId = recipientFilter.replace('package:', '');
+        subscribers = subscribers.filter(s => String(s.packageInterestId) === String(pkgId));
+      } else if (recipientFilter.startsWith('Package:')) {
+        const pkgTitle = recipientFilter.replace('Package:', '').trim();
+        subscribers = subscribers.filter(s => 
+          s.packageInterest && s.packageInterest.toLowerCase().includes(pkgTitle.toLowerCase())
+        );
+      }
+    } else if (sendToAll === false) {
+      if (channelFilter) {
+        subscribers = subscribers.filter(s => s.channel === channelFilter);
+      }
+      if (packageInterestId) {
+        subscribers = subscribers.filter(s => String(s.packageInterestId) === String(packageInterestId));
+      }
     }
-    if (packageInterestId) {
-      recipients = recipients.filter(s => String(s.packageInterestId) === String(packageInterestId));
-    }
+
+    recipients = subscribers.map((s: any) => ({
+      phone: s.phone,
+      name: s.name || '',
+      email: s.email || '',
+      packageInterest: s.packageInterest || ''
+    }));
+    recipientPhones = recipients.map(r => r.phone);
   }
 
-  const recipientsCount = recipients.length;
+  const recipientsCount = recipientPhones.length;
   const campaignId = `camp_${Date.now()}`;
 
+  // Log each recipient
   recipients.forEach((rec, idx) => {
     db.smsLogs.unshift({
       id: `sms-${Date.now()}-${idx}`,
@@ -1545,7 +1699,9 @@ apiRouter.post('/admin/sms/campaign', authenticateJWT, (req: Request, res: Respo
       failedCount: 0,
       campaignId,
       sentAt: new Date().toISOString(),
-      status: 'Delivered'
+      status: 'Delivered',
+      recipientType: recipientTypeLabel,
+      recipientPhones: recipientPhones.slice(0, 10) // Return first 10 for preview
     }
   });
 });
@@ -2114,6 +2270,331 @@ apiRouter.delete('/admin/testimonials/:id', authenticateJWT, (req: Request, res:
     success: true,
     message: 'Testimonial deleted successfully'
   });
+});
+
+// ============================================================
+// SUBSCRIBERS
+// ============================================================
+
+// GET all subscribers (admin)
+apiRouter.get('/admin/subscribers', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const sorted = [...db.subscribers].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    res.json({
+      status: 'success',
+      success: true,
+      count: sorted.length,
+      data: sorted
+    });
+  } catch (error) {
+    console.error('❌ Error fetching subscribers:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to fetch subscribers' });
+  }
+});
+
+// CREATE subscriber (public - for website signups)
+apiRouter.post('/subscribers', (req: Request, res: Response) => {
+  try {
+    const { phone, email, name, channel, packageInterestId, optInStatus } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Phone number is required'
+      });
+    }
+
+    const existing = db.subscribers.find(s => s.phone === phone);
+    if (existing) {
+      existing.email = email || existing.email;
+      existing.name = name || existing.name;
+      existing.channel = channel || existing.channel;
+      existing.packageInterestId = packageInterestId || existing.packageInterestId;
+      existing.optInStatus = true;
+      existing.updatedAt = new Date().toISOString();
+      db.saveToFile();
+      
+      return res.json({
+        status: 'success',
+        success: true,
+        message: 'Subscriber updated successfully',
+        data: existing
+      });
+    }
+
+    const now = new Date().toISOString();
+    const newSubscriber = {
+      id: `sub-${Date.now()}`,
+      phone,
+      email: email || '',
+      name: name || '',
+      channel: channel || 'Web Form',
+      packageInterestId: packageInterestId || null,
+      optInStatus: optInStatus !== undefined ? optInStatus : true,
+      dateSubscribed: now,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    db.subscribers.unshift(newSubscriber);
+    db.saveToFile();
+
+    res.status(201).json({
+      status: 'success',
+      success: true,
+      message: 'Subscriber created successfully',
+      data: newSubscriber
+    });
+  } catch (error) {
+    console.error('❌ Error creating subscriber:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to create subscriber' });
+  }
+});
+
+// CREATE subscriber (admin - for manual addition)
+apiRouter.post('/admin/subscribers', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const { phone, email, name, channel, packageInterestId, optInStatus } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Phone number is required'
+      });
+    }
+
+    const existing = db.subscribers.find(s => s.phone === phone);
+    if (existing) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'Subscriber with this phone number already exists'
+      });
+    }
+
+    const now = new Date().toISOString();
+    const newSubscriber = {
+      id: `sub-${Date.now()}`,
+      phone,
+      email: email || '',
+      name: name || '',
+      channel: channel || 'Admin Added',
+      packageInterestId: packageInterestId || null,
+      optInStatus: optInStatus !== undefined ? optInStatus : true,
+      dateSubscribed: now,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    db.subscribers.unshift(newSubscriber);
+    db.saveToFile();
+
+    res.status(201).json({
+      status: 'success',
+      success: true,
+      message: 'Subscriber added successfully',
+      data: newSubscriber
+    });
+  } catch (error) {
+    console.error('❌ Error creating subscriber:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to create subscriber' });
+  }
+});
+
+// ⚠️⚠️⚠️ BULK DELETE SUBSCRIBERS - MUST COME BEFORE SINGLE DELETE ⚠️⚠️⚠️
+apiRouter.delete('/admin/subscribers/bulk-delete', authenticateJWT, (req: Request, res: Response) => {
+  console.log('🔥🔥🔥 BULK DELETE SUBSCRIBERS ENDPOINT HIT! 🔥🔥🔥');
+  console.log('📥 Request body:', req.body);
+  
+  try {
+    // Accept both 'ids' and 'id' from request body
+    const { ids, id } = req.body;
+    
+    // Handle both single ID and array of IDs
+    let idsToDelete: string[] = [];
+    if (ids && Array.isArray(ids)) {
+      idsToDelete = ids;
+    } else if (id) {
+      idsToDelete = [id];
+    } else {
+      return res.status(400).json({ 
+        status: 'error', 
+        success: false, 
+        error: 'No subscriber IDs provided' 
+      });
+    }
+    
+    console.log('📥 IDs to delete:', idsToDelete);
+    console.log('📊 Current subscribers:', db.subscribers.map(s => ({ id: s.id, phone: s.phone })));
+    
+    let deletedCount = 0;
+    const deletedIds = [];
+
+    // Loop through subscribers backwards to safely delete
+    for (let i = db.subscribers.length - 1; i >= 0; i--) {
+      const subscriber = db.subscribers[i];
+      const subscriberId = String(subscriber.id);
+      
+      // Check if this ID is in the delete list
+      const shouldDelete = idsToDelete.some((idToDelete: string) => String(idToDelete) === subscriberId);
+      
+      if (shouldDelete) {
+        console.log(`🗑️ Deleting subscriber: ${subscriberId} - ${subscriber.phone}`);
+        deletedIds.push(subscriberId);
+        db.subscribers.splice(i, 1);
+        deletedCount++;
+      }
+    }
+
+    db.saveToFile();
+
+    console.log(`✅ Deleted ${deletedCount} subscribers`);
+
+    if (deletedCount === 0) {
+      return res.status(404).json({ 
+        status: 'error', 
+        success: false, 
+        error: 'No matching subscribers found to delete' 
+      });
+    }
+
+    res.json({
+      status: 'success',
+      success: true,
+      message: `Deleted ${deletedCount} subscribers`,
+      data: { 
+        deletedCount,
+        deletedIds 
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error bulk deleting subscribers:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      success: false, 
+      error: 'Failed to bulk delete subscribers' 
+    });
+  }
+});
+
+// DELETE single subscriber - MUST COME AFTER bulk-delete
+apiRouter.delete('/admin/subscribers/:id', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const index = db.subscribers.findIndex(s => String(s.id) === String(req.params.id));
+    if (index === -1) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Subscriber not found' });
+    }
+
+    db.deleteSubscriber(index);
+    res.json({
+      status: 'success',
+      success: true,
+      message: 'Subscriber deleted successfully'
+    });
+  } catch (error) {
+    console.error('❌ Error deleting subscriber:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to delete subscriber' });
+  }
+});
+
+// UPDATE subscriber
+apiRouter.put('/admin/subscribers/:id', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const subscriber = db.subscribers.find(s => String(s.id) === String(req.params.id));
+    if (!subscriber) {
+      return res.status(404).json({ status: 'error', success: false, error: 'Subscriber not found' });
+    }
+
+    const { optInStatus, email, name, channel, packageInterestId } = req.body;
+
+    if (optInStatus !== undefined) subscriber.optInStatus = optInStatus;
+    if (email !== undefined) subscriber.email = email;
+    if (name !== undefined) subscriber.name = name;
+    if (channel !== undefined) subscriber.channel = channel;
+    if (packageInterestId !== undefined) subscriber.packageInterestId = packageInterestId;
+    
+    subscriber.updatedAt = new Date().toISOString();
+    db.saveToFile();
+
+    res.json({
+      status: 'success',
+      success: true,
+      message: 'Subscriber updated successfully',
+      data: subscriber
+    });
+  } catch (error) {
+    console.error('❌ Error updating subscriber:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to update subscriber' });
+  }
+});
+
+// BULK IMPORT subscribers
+apiRouter.post('/admin/subscribers/bulk', authenticateJWT, (req: Request, res: Response) => {
+  try {
+    const { subscribers } = req.body;
+    
+    if (!subscribers || !Array.isArray(subscribers) || subscribers.length === 0) {
+      return res.status(400).json({
+        status: 'error',
+        success: false,
+        error: 'No subscribers provided for import'
+      });
+    }
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    const now = new Date().toISOString();
+
+    for (const sub of subscribers) {
+      if (!sub.phone) continue;
+
+      const existing = db.subscribers.find(s => s.phone === sub.phone);
+      
+      if (existing) {
+        existing.email = sub.email || existing.email;
+        existing.name = sub.name || existing.name;
+        existing.channel = sub.channel || existing.channel;
+        existing.packageInterestId = sub.packageInterestId || existing.packageInterestId;
+        existing.optInStatus = true;
+        existing.updatedAt = now;
+        updatedCount++;
+      } else {
+        const newSubscriber = {
+          id: `sub-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          phone: sub.phone,
+          email: sub.email || '',
+          name: sub.name || '',
+          channel: sub.channel || 'Bulk Import',
+          packageInterestId: sub.packageInterestId || null,
+          optInStatus: true,
+          dateSubscribed: now,
+          createdAt: now,
+          updatedAt: now
+        };
+        db.subscribers.unshift(newSubscriber);
+        addedCount++;
+      }
+    }
+
+    db.saveToFile();
+
+    res.json({
+      status: 'success',
+      success: true,
+      message: `Imported ${addedCount} new subscribers, updated ${updatedCount} existing`,
+      data: {
+        added: addedCount,
+        updated: updatedCount
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error bulk importing subscribers:', error);
+    res.status(500).json({ status: 'error', success: false, error: 'Failed to bulk import subscribers' });
+  }
 });
 
 export default apiRouter;

@@ -1,6 +1,350 @@
 {
-  "packages": [],
+  "packages": [
+    {
+      "id": "pkg-1",
+      "titleEn": "Premium Umrah Package",
+      "titleAr": "باقة العمرة الممتازة",
+      "titleAm": "የተሻሻለ ዑምራ ፓኬጅ",
+      "category": "Premium",
+      "priceUsd": 2999,
+      "priceEtb": 179940,
+      "priceSar": 11246,
+      "priceType": "single",
+      "discounts": [
+        {
+          "id": "disc-1",
+          "type": "percentage",
+          "value": 10,
+          "label": "Family Discount",
+          "labelAr": "خصم العائلة",
+          "description": "10% off for families of 4 or more",
+          "minPersons": 4,
+          "maxPersons": 10,
+          "discountType": "group",
+          "isActive": true
+        },
+        {
+          "id": "disc-2",
+          "type": "percentage",
+          "value": 15,
+          "label": "Senior Citizens",
+          "labelAr": "كبار السن",
+          "description": "15% off for seniors aged 60 and above",
+          "ageMin": 60,
+          "ageMax": 120,
+          "discountType": "age",
+          "isActive": true
+        },
+        {
+          "id": "disc-3",
+          "type": "fixed",
+          "value": 200,
+          "label": "Group Discount",
+          "labelAr": "خصم المجموعة",
+          "description": "$200 off for groups of 10 or more",
+          "minPersons": 10,
+          "discountType": "group",
+          "isActive": true
+        }
+      ],
+      "persons": [
+        {
+          "id": "person-1788717752042-ry6qso",
+          "name": "Abebe",
+          "email": "",
+          "phone": "+909099871625"
+        }
+      ],
+      "durationDays": 10,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Return flights (Ethiopian Airlines)",
+        "3-star hotel in Makkah (Dar Al Eiman)",
+        "2-star hotel in Madinah (Anwar Al Madinah)",
+        "Private transport between cities",
+        "Daily breakfast and dinner",
+        "Guided ziyarat tours",
+        "24/7 support from Mutawwif"
+      ],
+      "availableDates": [
+        "2026-12-01",
+        "2026-12-15",
+        "2027-01-05"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Arrival in Madinah",
+          "description": "Arrive at Madinah Airport, transfer to hotel, rest and prepare for Umrah"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Madinah Ziyarat",
+          "description": "Visit Masjid Nabawi, Quba Mosque, Uhud Mountain, and other historical sites"
+        },
+        {
+          "dayNumber": 3,
+          "title": "Travel to Makkah",
+          "description": "Travel to Makkah by private bus, check-in to hotel, prepare for Umrah"
+        },
+        {
+          "dayNumber": 4,
+          "title": "Perform Umrah",
+          "description": "Perform Umrah rituals with guidance from Mutawwif"
+        },
+        {
+          "dayNumber": 5,
+          "title": "Makkah Ziyarat",
+          "description": "Visit Arafat, Muzdalifah, Mina, and other significant sites"
+        },
+        {
+          "dayNumber": 6,
+          "title": "Second Umrah",
+          "description": "Second Umrah opportunity for those who wish to perform again"
+        },
+        {
+          "dayNumber": 7,
+          "title": "Free Day in Makkah",
+          "description": "Free time for prayer, reflection, and shopping"
+        },
+        {
+          "dayNumber": 8,
+          "title": "Travel to Madinah",
+          "description": "Travel back to Madinah, check-in to hotel"
+        },
+        {
+          "dayNumber": 9,
+          "title": "Madinah Ziyarat",
+          "description": "Additional Ziyarat in Madinah"
+        },
+        {
+          "dayNumber": 10,
+          "title": "Departure",
+          "description": "Transfer to Madinah Airport for return flight"
+        }
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1583434103998-6b4f8a9d7d8a?auto=format&fit=crop&q=80&w=800",
+      "isActive": true,
+      "whatsappClicks": 1,
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-06T18:59:29.483Z"
+    },
+    {
+      "id": "pkg-2",
+      "titleEn": "Standard Umrah Package",
+      "titleAr": "باقة العمرة القياسية",
+      "titleAm": "መደበኛ ዑምራ ፓኬጅ",
+      "category": "Standard",
+      "priceUsd": 1999,
+      "priceEtb": 119940,
+      "priceSar": 7496,
+      "priceType": "single",
+      "discounts": [
+        {
+          "id": "disc-4",
+          "type": "percentage",
+          "value": 10,
+          "label": "Family Discount",
+          "labelAr": "خصم العائلة",
+          "description": "10% off for families of 4 or more",
+          "minPersons": 4,
+          "discountType": "group",
+          "isActive": true
+        },
+        {
+          "id": "disc-5",
+          "type": "percentage",
+          "value": 20,
+          "label": "Student Discount",
+          "labelAr": "خصم الطلاب",
+          "description": "20% off for students with valid ID",
+          "discountType": "general",
+          "isActive": true
+        }
+      ],
+      "persons": [
+        {
+          "id": "person-1788718590588-aevjq5",
+          "name": "Mohammed",
+          "email": "mohammed@gmail.com",
+          "phone": "+251900882255",
+          "age": 45,
+          "gender": "Male"
+        }
+      ],
+      "durationDays": 8,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Return flights (Saudia Airlines)",
+        "3-star hotel in Makkah",
+        "2-star hotel in Madinah",
+        "Shared transport between cities",
+        "Daily breakfast",
+        "Guided ziyarat tours"
+      ],
+      "availableDates": [
+        "2026-12-10",
+        "2027-01-15"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Arrival in Madinah",
+          "description": "Arrive at Madinah Airport, transfer to hotel"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Madinah Ziyarat",
+          "description": "Visit Masjid Nabawi and other historical sites"
+        },
+        {
+          "dayNumber": 3,
+          "title": "Travel to Makkah",
+          "description": "Travel to Makkah by bus, check-in to hotel"
+        },
+        {
+          "dayNumber": 4,
+          "title": "Perform Umrah",
+          "description": "Perform Umrah rituals with guidance"
+        },
+        {
+          "dayNumber": 5,
+          "title": "Makkah Ziyarat",
+          "description": "Visit significant sites around Makkah"
+        },
+        {
+          "dayNumber": 6,
+          "title": "Free Day",
+          "description": "Free time for prayer and reflection"
+        },
+        {
+          "dayNumber": 7,
+          "title": "Travel to Madinah",
+          "description": "Travel back to Madinah"
+        },
+        {
+          "dayNumber": 8,
+          "title": "Departure",
+          "description": "Transfer to Madinah Airport for return flight"
+        }
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&q=80&w=800",
+      "isActive": true,
+      "whatsappClicks": 2,
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-06T18:58:56.444Z"
+    },
+    {
+      "id": "pkg-3",
+      "titleEn": "Economy Umrah Package",
+      "titleAr": "باقة العمرة الاقتصادية",
+      "titleAm": "ኢኮኖሚ ዑምራ ፓኬጅ",
+      "category": "Economy",
+      "priceUsd": 1299,
+      "priceEtb": 77940,
+      "priceSar": 4871,
+      "priceType": "single",
+      "discounts": [
+        {
+          "id": "disc-6",
+          "type": "percentage",
+          "value": 5,
+          "label": "Early Bird Discount",
+          "labelAr": "خصم التسجيل المبكر",
+          "description": "5% off for bookings made 60+ days in advance",
+          "discountType": "general",
+          "isActive": true
+        },
+        {
+          "id": "disc-7",
+          "type": "fixed",
+          "value": 50,
+          "label": "Group Discount",
+          "labelAr": "خصم المجموعة",
+          "description": "$50 off for groups of 5 or more",
+          "minPersons": 5,
+          "discountType": "group",
+          "isActive": true
+        }
+      ],
+      "persons": [],
+      "durationDays": 6,
+      "departureCity": "Addis Ababa",
+      "inclusions": [
+        "Return flights (Flydubai)",
+        "2-star hotel in Makkah",
+        "1-star hotel in Madinah",
+        "Shared transport between cities",
+        "Daily breakfast"
+      ],
+      "availableDates": [
+        "2027-01-20",
+        "2027-02-10"
+      ],
+      "itinerary": [
+        {
+          "dayNumber": 1,
+          "title": "Arrival in Madinah",
+          "description": "Arrive at Madinah Airport, transfer to hotel"
+        },
+        {
+          "dayNumber": 2,
+          "title": "Madinah Ziyarat",
+          "description": "Visit Masjid Nabawi"
+        },
+        {
+          "dayNumber": 3,
+          "title": "Travel to Makkah",
+          "description": "Travel to Makkah by bus"
+        },
+        {
+          "dayNumber": 4,
+          "title": "Perform Umrah",
+          "description": "Perform Umrah rituals"
+        },
+        {
+          "dayNumber": 5,
+          "title": "Free Day",
+          "description": "Free time for prayer"
+        },
+        {
+          "dayNumber": 6,
+          "title": "Departure",
+          "description": "Transfer to airport for return flight"
+        }
+      ],
+      "imageUrl": "https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&q=80&w=800",
+      "isActive": true,
+      "whatsappClicks": 1,
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-06T18:58:30.058Z"
+    }
+  ],
   "subscribers": [
+    {
+      "id": "sub-1788721412874",
+      "phone": "+102155628936",
+      "email": "",
+      "name": "",
+      "channel": "Web Banner",
+      "packageInterestId": null,
+      "optInStatus": true,
+      "dateSubscribed": "2026-09-06T19:03:32.874Z",
+      "createdAt": "2026-09-06T19:03:32.874Z",
+      "updatedAt": "2026-09-06T19:03:32.874Z"
+    },
+    {
+      "id": "sub-1788721344939",
+      "phone": "+251911342567",
+      "email": "",
+      "name": "",
+      "channel": "Web Banner",
+      "packageInterestId": null,
+      "optInStatus": true,
+      "dateSubscribed": "2026-09-06T19:02:24.938Z",
+      "createdAt": "2026-09-06T19:02:24.938Z",
+      "updatedAt": "2026-09-06T19:02:24.938Z"
+    },
     {
       "id": "sub-1",
       "phone": "+251911223344",
@@ -9,9 +353,9 @@
       "channel": "Footer Newsletter",
       "packageInterestId": "pkg-1",
       "optInStatus": "Active",
-      "dateSubscribed": "2026-08-23T19:23:02.927Z",
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "dateSubscribed": "2026-09-05T08:53:02.887Z",
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-05T08:53:02.887Z"
     },
     {
       "id": "sub-2",
@@ -21,9 +365,9 @@
       "channel": "Umrah Package Modal",
       "packageInterestId": "pkg-2",
       "optInStatus": "Active",
-      "dateSubscribed": "2026-08-23T19:23:02.927Z",
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "dateSubscribed": "2026-09-05T08:53:02.887Z",
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-05T08:53:02.887Z"
     }
   ],
   "inquiries": [
@@ -34,11 +378,11 @@
       "email": "mohammed.ahmed@example.com",
       "subject": "Inquiry regarding Ramadan Umrah 2026 Group Booking",
       "message": "Assalamu Alaikum. We have a family group of 8 persons interested in the Premium Umrah package.",
-      "status": "New",
+      "status": "Resolved",
       "source": "Contact Us Form",
-      "dateReceived": "2026-08-23T19:23:02.927Z",
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "dateReceived": "2026-09-05T08:53:02.887Z",
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-06T16:13:12.876Z"
     },
     {
       "id": "inq-2",
@@ -47,11 +391,11 @@
       "email": "fatima.z@example.com",
       "subject": "Visa requirement for family members",
       "message": "Hello Delta Travel, I want to confirm if children under 12 need separate medical certificates.",
-      "status": "Contacted",
+      "status": "Resolved",
       "source": "Package Page",
-      "dateReceived": "2026-08-23T19:23:02.927Z",
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "dateReceived": "2026-09-05T08:53:02.887Z",
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-06T16:13:12.876Z"
     }
   ],
   "gallery": [],
@@ -60,13 +404,13 @@
       "id": "usr-1",
       "username": "admin",
       "email": "admin@deltatravel.com",
-      "passwordHash": "$2b$10$iwv2kxHGrHS0Q93pcgq4He3KOu/2R2uP.8u.QVzN4k8dF/33UFThi",
+      "passwordHash": "$2b$10$uoWEz9YMxjw/yurCo2Y3VuCfoGIHc//5brYfAcM3mTOStUhLN9lHm",
       "role": "Admin",
-      "lastLogin": "2026-09-05T07:58:32.950Z",
+      "lastLogin": "2026-09-06T18:36:26.110Z",
       "isActive": true,
       "status": "Active",
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-05T08:53:02.887Z"
     }
   ],
   "smsLogs": [
@@ -76,137 +420,11 @@
       "message": "Thank you for subscribing to Delta Travel & Tour updates!",
       "status": "Delivered",
       "campaignName": "Subscription Welcome SMS",
-      "sentAt": "2026-08-23T19:23:02.927Z"
+      "sentAt": "2026-09-05T08:53:02.887Z"
     }
   ],
-  "socialLinks": [
-    {
-      "id": "sl-1788368726638",
-      "platform": "youtube",
-      "url": "https://www.youtube.com/watch?v=z4OkHqu1KsA&t=8s",
-      "isActive": true,
-      "icon": "Youtube"
-    }
-  ],
-  "priceLogs": [
-    {
-      "id": "pl-1788375729552",
-      "packageId": "pkg-1788375729540",
-      "priceUsd": 250,
-      "priceEtb": 45000,
-      "priceSar": 1100,
-      "previousPriceUsd": null,
-      "previousPriceEtb": null,
-      "previousPriceSar": null,
-      "reason": "Initial package creation",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-09-02T19:02:09.540Z"
-    },
-    {
-      "id": "pl-1788367284672",
-      "packageId": "pkg-1788367284660",
-      "priceUsd": 1000,
-      "priceEtb": 200000,
-      "priceSar": 5000,
-      "previousPriceUsd": null,
-      "previousPriceEtb": null,
-      "previousPriceSar": null,
-      "reason": "Initial package creation",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-09-02T16:41:24.660Z"
-    },
-    {
-      "id": "pl-1787608443628",
-      "packageId": "pkg-1787515814364",
-      "priceUsd": 190,
-      "priceEtb": 30396,
-      "priceSar": 713,
-      "previousPriceUsd": 190,
-      "previousPriceEtb": 30000,
-      "previousPriceSar": 150,
-      "reason": "Price updated via admin",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-08-24T21:54:03.628Z"
-    },
-    {
-      "id": "pl-1787516937792",
-      "packageId": "pkg-1787515814364",
-      "priceUsd": 190,
-      "priceEtb": 30000,
-      "priceSar": 150,
-      "previousPriceUsd": 250,
-      "previousPriceEtb": 40000,
-      "previousPriceSar": 900,
-      "reason": "Price updated via admin",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-08-23T20:28:57.792Z"
-    },
-    {
-      "id": "pl-1787516675634",
-      "packageId": "pkg-2",
-      "priceUsd": 2500,
-      "priceEtb": 119940,
-      "priceSar": 7496,
-      "previousPriceUsd": 1999,
-      "previousPriceEtb": 119940,
-      "previousPriceSar": 7496,
-      "reason": "Price updated via admin",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-08-23T20:24:35.634Z"
-    },
-    {
-      "id": "pl-1787516148717",
-      "packageId": "pkg-1",
-      "priceUsd": 5000,
-      "priceEtb": 900000,
-      "priceSar": 20000,
-      "previousPriceUsd": 2999,
-      "previousPriceEtb": 179940,
-      "previousPriceSar": 11246,
-      "reason": "Price updated via admin",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-08-23T20:15:48.717Z"
-    },
-    {
-      "id": "pl-1787515917884",
-      "packageId": "pkg-1787515814364",
-      "priceUsd": 250,
-      "priceEtb": 40000,
-      "priceSar": 900,
-      "previousPriceUsd": 200,
-      "previousPriceEtb": 40000,
-      "previousPriceSar": 900,
-      "reason": "Seasonal Adjustment",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-08-23T20:11:57.884Z"
-    },
-    {
-      "id": "pl-1787515814375",
-      "packageId": "pkg-1787515814364",
-      "priceUsd": 200,
-      "priceEtb": 40000,
-      "priceSar": 900,
-      "previousPriceUsd": null,
-      "previousPriceEtb": null,
-      "previousPriceSar": null,
-      "reason": "Initial package creation",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-08-23T20:10:14.364Z"
-    },
-    {
-      "id": "pl-1787513199052",
-      "packageId": "pkg-1787513199045",
-      "priceUsd": 100,
-      "priceEtb": 20000,
-      "priceSar": 400,
-      "previousPriceUsd": null,
-      "previousPriceEtb": null,
-      "previousPriceSar": null,
-      "reason": "Initial package creation",
-      "updatedBy": "Admin",
-      "updatedAt": "2026-08-23T19:26:39.045Z"
-    }
-  ],
+  "socialLinks": [],
+  "priceLogs": [],
   "faqs": [],
   "teamMembers": [],
   "officeImages": [],
@@ -220,8 +438,8 @@
       "textAr": "رحلة روحية لا تنسى! جعلت دلتا ترافيل تجربة العمرة لدينا سلسة وخالية من الإجهاد. كانت الفنادق ممتازة والإرشاد استثنائي.",
       "date": "2026-01-15",
       "isActive": true,
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-05T08:53:02.887Z"
     },
     {
       "id": "test-2",
@@ -232,8 +450,8 @@
       "textAr": "أفضل وكالة سفر للعمرة! كل شيء كان منظمًا بشكل مثالي من الرحلات إلى الإقامة. كان المطوف على دراية كبيرة ومفيدًا.",
       "date": "2026-01-20",
       "isActive": true,
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-05T08:53:02.887Z"
     },
     {
       "id": "test-3",
@@ -244,8 +462,8 @@
       "textAr": "أنصح بشدة دلتا ترافيل لأي شخص يخطط للعمرة. كان الفريق محترفًا ومستجيبًا وتأكد من العناية بكل التفاصيل.",
       "date": "2026-02-01",
       "isActive": true,
-      "createdAt": "2026-08-23T19:23:02.927Z",
-      "updatedAt": "2026-08-23T19:23:02.927Z"
+      "createdAt": "2026-09-05T08:53:02.887Z",
+      "updatedAt": "2026-09-05T08:53:02.887Z"
     }
   ]
 }
