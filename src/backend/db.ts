@@ -55,7 +55,7 @@ class DatabaseStore {
 
   constructor() {
     this.loadFromFile();
-    if (this.packages.length === 0 && this.gallery.length === 0) {
+    if (this.packages.length === 0 && this.gallery.length === 0 && this.adminUsers.length === 0) {
       this.seedDefaults();
       this.saveToFile();
     }
@@ -117,6 +117,8 @@ class DatabaseStore {
   private seedDefaults() {
     const now = new Date().toISOString();
 
+    // All arrays empty - data will be added via admin page
+    
     // Default social links
     this.socialLinks = [];
 
@@ -129,438 +131,25 @@ class DatabaseStore {
     // Default Team Members
     this.teamMembers = [];
 
-    // Default Packages - WITH new pricing structure
-    this.packages = [
-  {
-    id: 'pkg-1',
-    titleEn: 'Premium Umrah Package',
-    titleAr: 'باقة العمرة الممتازة',
-    titleAm: 'የተሻሻለ ዑምራ ፓኬጅ',
-    category: 'Premium' as PackageCategory,
-    
-    priceUsd: 2999,
-    priceEtb: 179940,
-    priceSar: 11246,
-    priceType: 'single' as PriceType,
-    
-    // Discounts with proper types
-    discounts: [
-      {
-        id: 'disc-1',
-        type: 'percentage',
-        value: 10,
-        label: 'Family Discount',
-        labelAr: 'خصم العائلة',
-        description: '10% off for families of 4 or more',
-        minPersons: 4,
-        maxPersons: 10,
-        discountType: 'group',
-        isActive: true
-      },
-      {
-        id: 'disc-2',
-        type: 'percentage',
-        value: 15,
-        label: 'Senior Citizens',
-        labelAr: 'كبار السن',
-        description: '15% off for seniors aged 60 and above',
-        ageMin: 60,
-        ageMax: 120,
-        discountType: 'age',
-        isActive: true
-      },
-      {
-        id: 'disc-3',
-        type: 'fixed',
-        value: 200,
-        label: 'Group Discount',
-        labelAr: 'خصم المجموعة',
-        description: '$200 off for groups of 10 or more',
-        minPersons: 10,
-        discountType: 'group',
-        isActive: true
-      }
-    ],
-    
-    persons: [
-      {
-        id: 'person-1',
-        name: 'Ahmed Mohammed',
-        email: 'ahmed@example.com',
-        phone: '+251911223344',
-        age: 35,
-        gender: 'Male'
-      },
-      {
-        id: 'person-2',
-        name: 'Fatima Zewde',
-        email: 'fatima@example.com',
-        phone: '+251911887766',
-        age: 28,
-        gender: 'Female'
-      }
-    ],
-    
-    durationDays: 10,
-    departureCity: 'Addis Ababa',
-    inclusions: [
-      'Return flights (Ethiopian Airlines)',
-      '3-star hotel in Makkah (Dar Al Eiman)',
-      '2-star hotel in Madinah (Anwar Al Madinah)',
-      'Private transport between cities',
-      'Daily breakfast and dinner',
-      'Guided ziyarat tours',
-      '24/7 support from Mutawwif'
-    ],
-    availableDates: ['2026-12-01', '2026-12-15', '2027-01-05'],
-    itinerary: [
-      {
-        dayNumber: 1,
-        title: 'Arrival in Madinah',
-        description: 'Arrive at Madinah Airport, transfer to hotel, rest and prepare for Umrah'
-      },
-      {
-        dayNumber: 2,
-        title: 'Madinah Ziyarat',
-        description: 'Visit Masjid Nabawi, Quba Mosque, Uhud Mountain, and other historical sites'
-      },
-      {
-        dayNumber: 3,
-        title: 'Travel to Makkah',
-        description: 'Travel to Makkah by private bus, check-in to hotel, prepare for Umrah'
-      },
-      {
-        dayNumber: 4,
-        title: 'Perform Umrah',
-        description: 'Perform Umrah rituals with guidance from Mutawwif'
-      },
-      {
-        dayNumber: 5,
-        title: 'Makkah Ziyarat',
-        description: 'Visit Arafat, Muzdalifah, Mina, and other significant sites'
-      },
-      {
-        dayNumber: 6,
-        title: 'Second Umrah',
-        description: 'Second Umrah opportunity for those who wish to perform again'
-      },
-      {
-        dayNumber: 7,
-        title: 'Free Day in Makkah',
-        description: 'Free time for prayer, reflection, and shopping'
-      },
-      {
-        dayNumber: 8,
-        title: 'Travel to Madinah',
-        description: 'Travel back to Madinah, check-in to hotel'
-      },
-      {
-        dayNumber: 9,
-        title: 'Madinah Ziyarat',
-        description: 'Additional Ziyarat in Madinah'
-      },
-      {
-        dayNumber: 10,
-        title: 'Departure',
-        description: 'Transfer to Madinah Airport for return flight'
-      }
-    ],
-    imageUrl: 'https://images.unsplash.com/photo-1583434103998-6b4f8a9d7d8a?auto=format&fit=crop&q=80&w=800',
-    isActive: true,
-    whatsappClicks: 0,
-    createdAt: now,
-    updatedAt: now
-  },
-  {
-    id: 'pkg-2',
-    titleEn: 'Standard Umrah Package',
-    titleAr: 'باقة العمرة القياسية',
-    titleAm: 'መደበኛ ዑምራ ፓኬጅ',
-    category: 'Standard' as PackageCategory,
-    
-    priceUsd: 1999,
-    priceEtb: 119940,
-    priceSar: 7496,
-    priceType: 'single' as PriceType,
-    
-    discounts: [
-      {
-        id: 'disc-4',
-        type: 'percentage',
-        value: 10,
-        label: 'Family Discount',
-        labelAr: 'خصم العائلة',
-        description: '10% off for families of 4 or more',
-        minPersons: 4,
-        discountType: 'group',
-        isActive: true
-      },
-      {
-        id: 'disc-5',
-        type: 'percentage',
-        value: 20,
-        label: 'Student Discount',
-        labelAr: 'خصم الطلاب',
-        description: '20% off for students with valid ID',
-        discountType: 'general',
-        isActive: true
-      }
-    ],
-    
-    persons: [],
-    
-    durationDays: 8,
-    departureCity: 'Addis Ababa',
-    inclusions: [
-      'Return flights (Saudia Airlines)',
-      '3-star hotel in Makkah',
-      '2-star hotel in Madinah',
-      'Shared transport between cities',
-      'Daily breakfast',
-      'Guided ziyarat tours'
-    ],
-    availableDates: ['2026-12-10', '2027-01-15'],
-    itinerary: [
-      {
-        dayNumber: 1,
-        title: 'Arrival in Madinah',
-        description: 'Arrive at Madinah Airport, transfer to hotel'
-      },
-      {
-        dayNumber: 2,
-        title: 'Madinah Ziyarat',
-        description: 'Visit Masjid Nabawi and other historical sites'
-      },
-      {
-        dayNumber: 3,
-        title: 'Travel to Makkah',
-        description: 'Travel to Makkah by bus, check-in to hotel'
-      },
-      {
-        dayNumber: 4,
-        title: 'Perform Umrah',
-        description: 'Perform Umrah rituals with guidance'
-      },
-      {
-        dayNumber: 5,
-        title: 'Makkah Ziyarat',
-        description: 'Visit significant sites around Makkah'
-      },
-      {
-        dayNumber: 6,
-        title: 'Free Day',
-        description: 'Free time for prayer and reflection'
-      },
-      {
-        dayNumber: 7,
-        title: 'Travel to Madinah',
-        description: 'Travel back to Madinah'
-      },
-      {
-        dayNumber: 8,
-        title: 'Departure',
-        description: 'Transfer to Madinah Airport for return flight'
-      }
-    ],
-    imageUrl: 'https://images.unsplash.com/photo-1564769625905-50e93615e769?auto=format&fit=crop&q=80&w=800',
-    isActive: true,
-    whatsappClicks: 0,
-    createdAt: now,
-    updatedAt: now
-  },
-  {
-    id: 'pkg-3',
-    titleEn: 'Economy Umrah Package',
-    titleAr: 'باقة العمرة الاقتصادية',
-    titleAm: 'ኢኮኖሚ ዑምራ ፓኬጅ',
-    category: 'Economy' as PackageCategory,
-    
-    priceUsd: 1299,
-    priceEtb: 77940,
-    priceSar: 4871,
-    priceType: 'single' as PriceType,
-    
-    discounts: [
-      {
-        id: 'disc-6',
-        type: 'percentage',
-        value: 5,
-        label: 'Early Bird Discount',
-        labelAr: 'خصم التسجيل المبكر',
-        description: '5% off for bookings made 60+ days in advance',
-        discountType: 'general',
-        isActive: true
-      },
-      {
-        id: 'disc-7',
-        type: 'fixed',
-        value: 50,
-        label: 'Group Discount',
-        labelAr: 'خصم المجموعة',
-        description: '$50 off for groups of 5 or more',
-        minPersons: 5,
-        discountType: 'group',
-        isActive: true
-      }
-    ],
-    
-    persons: [],
-    
-    durationDays: 6,
-    departureCity: 'Addis Ababa',
-    inclusions: [
-      'Return flights (Flydubai)',
-      '2-star hotel in Makkah',
-      '1-star hotel in Madinah',
-      'Shared transport between cities',
-      'Daily breakfast'
-    ],
-    availableDates: ['2027-01-20', '2027-02-10'],
-    itinerary: [
-      {
-        dayNumber: 1,
-        title: 'Arrival in Madinah',
-        description: 'Arrive at Madinah Airport, transfer to hotel'
-      },
-      {
-        dayNumber: 2,
-        title: 'Madinah Ziyarat',
-        description: 'Visit Masjid Nabawi'
-      },
-      {
-        dayNumber: 3,
-        title: 'Travel to Makkah',
-        description: 'Travel to Makkah by bus'
-      },
-      {
-        dayNumber: 4,
-        title: 'Perform Umrah',
-        description: 'Perform Umrah rituals'
-      },
-      {
-        dayNumber: 5,
-        title: 'Free Day',
-        description: 'Free time for prayer'
-      },
-      {
-        dayNumber: 6,
-        title: 'Departure',
-        description: 'Transfer to airport for return flight'
-      }
-    ],
-    imageUrl: 'https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&q=80&w=800',
-    isActive: true,
-    whatsappClicks: 0,
-    createdAt: now,
-    updatedAt: now
-  }
-];
+    // Default Packages - EMPTY
+    this.packages = [];
 
-    // Default Office Images - Empty (no placeholders)
+    // Default Office Images - EMPTY
     this.officeImages = [];
 
-    // Default Testimonials
-    this.testimonials = [
-      {
-        id: 'test-1',
-        name: 'Ahmed Mohammed',
-        location: 'Addis Ababa, Ethiopia',
-        rating: 5,
-        text: 'An unforgettable spiritual journey! Delta Travel made our Umrah experience seamless and stress-free. The hotels were excellent and the guidance was exceptional.',
-        textAr: 'رحلة روحية لا تنسى! جعلت دلتا ترافيل تجربة العمرة لدينا سلسة وخالية من الإجهاد. كانت الفنادق ممتازة والإرشاد استثنائي.',
-        date: '2026-01-15',
-        isActive: true,
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'test-2',
-        name: 'Fatima Zewde',
-        location: 'Addis Ababa, Ethiopia',
-        rating: 5,
-        text: 'The best travel agency for Umrah! Everything was perfectly organized from flights to accommodations. The Mutawwif was very knowledgeable and helpful.',
-        textAr: 'أفضل وكالة سفر للعمرة! كل شيء كان منظمًا بشكل مثالي من الرحلات إلى الإقامة. كان المطوف على دراية كبيرة ومفيدًا.',
-        date: '2026-01-20',
-        isActive: true,
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'test-3',
-        name: 'Bilal Ibrahim',
-        location: 'Addis Ababa, Ethiopia',
-        rating: 5,
-        text: 'I highly recommend Delta Travel for anyone planning Umrah. The team was professional, responsive, and made sure every detail was taken care of.',
-        textAr: 'أنصح بشدة دلتا ترافيل لأي شخص يخطط للعمرة. كان الفريق محترفًا ومستجيبًا وتأكد من العناية بكل التفاصيل.',
-        date: '2026-02-01',
-        isActive: true,
-        createdAt: now,
-        updatedAt: now
-      }
-    ];
+    // Default Testimonials - EMPTY
+    this.testimonials = [];
 
-    // Subscribers (sample)
-    this.subscribers = [
-      {
-        id: 'sub-1',
-        phone: '+251911223344',
-        email: 'subscriber1@example.com',
-        name: 'Abebe Bikila',
-        channel: 'Footer Newsletter',
-        packageInterestId: 'pkg-1',
-        optInStatus: 'Active',
-        dateSubscribed: now,
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'sub-2',
-        phone: '+251911887766',
-        email: 'subscriber2@example.com',
-        name: 'Sara Mohammed',
-        channel: 'Umrah Package Modal',
-        packageInterestId: 'pkg-2',
-        optInStatus: 'Active',
-        dateSubscribed: now,
-        createdAt: now,
-        updatedAt: now
-      }
-    ];
+    // Subscribers - EMPTY
+    this.subscribers = [];
 
-    // Inquiries (sample)
-    this.inquiries = [
-      {
-        id: 'inq-1',
-        fullName: 'Mohammed Ahmed Al-Sayed',
-        phone: '+251922334455',
-        email: 'mohammed.ahmed@example.com',
-        subject: 'Inquiry regarding Ramadan Umrah 2026 Group Booking',
-        message: 'Assalamu Alaikum. We have a family group of 8 persons interested in the Premium Umrah package.',
-        status: 'New',
-        source: 'Contact Us Form',
-        dateReceived: now,
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'inq-2',
-        fullName: 'Fatima Zewde',
-        phone: '+251911001122',
-        email: 'fatima.z@example.com',
-        subject: 'Visa requirement for family members',
-        message: 'Hello Delta Travel, I want to confirm if children under 12 need separate medical certificates.',
-        status: 'Contacted',
-        source: 'Package Page',
-        dateReceived: now,
-        createdAt: now,
-        updatedAt: now
-      }
-    ];
+    // Inquiries - EMPTY
+    this.inquiries = [];
 
-    // Gallery 
+    // Gallery - EMPTY
     this.gallery = [];
 
-    // Admin users – only one
+    // Admin users – only one default admin
     this.adminUsers = [
       {
         id: 'usr-1',
@@ -576,17 +165,8 @@ class DatabaseStore {
       }
     ];
 
-    // SMS logs (sample)
-    this.smsLogs = [
-      {
-        id: 'sms-1',
-        phone: '+251911223344',
-        message: 'Thank you for subscribing to Delta Travel & Tour updates!',
-        status: 'Delivered',
-        campaignName: 'Subscription Welcome SMS',
-        sentAt: now
-      }
-    ];
+    // SMS logs - EMPTY
+    this.smsLogs = [];
   }
 
   // ===== ADD METHODS =====
@@ -595,14 +175,14 @@ class DatabaseStore {
     this.saveToFile();
   }
 
- addGalleryItem(item: GalleryItem) {
-  // Ensure thumbnailUrl is set for videos
-  if (item.type === 'video' && !item.thumbnailUrl) {
-    item.thumbnailUrl = item.imageUrl || '';
+  addGalleryItem(item: GalleryItem) {
+    // Ensure thumbnailUrl is set for videos
+    if (item.type === 'video' && !item.thumbnailUrl) {
+      item.thumbnailUrl = item.imageUrl || '';
+    }
+    this.gallery.unshift(item);
+    this.saveToFile();
   }
-  this.gallery.unshift(item);
-  this.saveToFile();
-}
 
   addSubscriber(sub: Subscriber) {
     this.subscribers.unshift(sub);
@@ -699,37 +279,37 @@ class DatabaseStore {
   }
 
   // ===== UPDATE METHODS =====
-updatePackage(index: number, pkg: TravelPackage, reason?: string) {
-  // Check if price changed
-  const existing = this.packages[index];
-  if (existing) {
-    const priceChanged = existing.priceUsd !== pkg.priceUsd || 
-                        existing.priceEtb !== pkg.priceEtb || 
-                        existing.priceSar !== pkg.priceSar;
-    
-    if (priceChanged) {
-      // Create price log with ETB as primary
-      const log: PriceLog = {
-        id: `pl-${Date.now()}`,
-        packageId: pkg.id,
-        priceUsd: pkg.priceUsd,
-        priceEtb: pkg.priceEtb,
-        priceSar: pkg.priceSar,
-        previousPriceUsd: existing.priceUsd,
-        previousPriceEtb: existing.priceEtb,
-        previousPriceSar: existing.priceSar,
-        reason: reason || 'Price updated via admin',
-        updatedBy: 'Admin',
-        updatedAt: new Date().toISOString()
-      };
-      this.priceLogs.unshift(log);
-      console.log(`📝 Price log created for ${pkg.id}: ETB ${existing.priceEtb} -> ETB ${pkg.priceEtb}`);
+  updatePackage(index: number, pkg: TravelPackage, reason?: string) {
+    // Check if price changed
+    const existing = this.packages[index];
+    if (existing) {
+      const priceChanged = existing.priceUsd !== pkg.priceUsd || 
+                          existing.priceEtb !== pkg.priceEtb || 
+                          existing.priceSar !== pkg.priceSar;
+      
+      if (priceChanged) {
+        // Create price log with ETB as primary
+        const log: PriceLog = {
+          id: `pl-${Date.now()}`,
+          packageId: pkg.id,
+          priceUsd: pkg.priceUsd,
+          priceEtb: pkg.priceEtb,
+          priceSar: pkg.priceSar,
+          previousPriceUsd: existing.priceUsd,
+          previousPriceEtb: existing.priceEtb,
+          previousPriceSar: existing.priceSar,
+          reason: reason || 'Price updated via admin',
+          updatedBy: 'Admin',
+          updatedAt: new Date().toISOString()
+        };
+        this.priceLogs.unshift(log);
+        console.log(`📝 Price log created for ${pkg.id}: ETB ${existing.priceEtb} -> ETB ${pkg.priceEtb}`);
+      }
     }
+    
+    this.packages[index] = pkg;
+    this.saveToFile();
   }
-  
-  this.packages[index] = pkg;
-  this.saveToFile();
-}
 
   updateGalleryItem(index: number, item: GalleryItem) {
     this.gallery[index] = item;
