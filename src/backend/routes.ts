@@ -2331,7 +2331,7 @@ apiRouter.post('/subscribers', (req: Request, res: Response) => {
       phone,
       email: email || '',
       name: name || '',
-      channel: channel || 'Web Form',
+      channel: channel || 'Web Banner', // Default for website signups
       packageInterestId: packageInterestId || null,
       optInStatus: optInStatus !== undefined ? optInStatus : true,
       dateSubscribed: now,
@@ -2382,7 +2382,7 @@ apiRouter.post('/admin/subscribers', authenticateJWT, (req: Request, res: Respon
       phone,
       email: email || '',
       name: name || '',
-      channel: channel || 'Admin Added',
+      channel: channel || 'Others', // Default for admin added
       packageInterestId: packageInterestId || null,
       optInStatus: optInStatus !== undefined ? optInStatus : true,
       dateSubscribed: now,
