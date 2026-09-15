@@ -1,5 +1,19 @@
 import { Pool, type PoolClient } from 'pg';
 import bcrypt from 'bcryptjs';
+import type {
+  AdminUser,
+  GalleryItem,
+  Inquiry,
+  SmsLog,
+  Subscriber,
+  TravelPackage,
+  SocialLink,
+  PriceLog,
+  FAQItem,
+  TeamMember,
+  OfficeImage,
+  Testimonial,
+} from '../types.js';
 
 // ============================================================
 // DATABASE CONNECTION
@@ -8,9 +22,10 @@ const DATABASE_URL = process.env.DATABASE_URL || '';
 
 // Only use SSL for remote databases (Render, etc.)
 // cPanel's local Postgres does NOT support SSL
-const useSSL = !DATABASE_URL.includes('localhost') && 
-               !DATABASE_URL.includes('127.0.0.1') &&
-               !DATABASE_URL.includes('/var/run/postgresql');
+const useSSL =
+  !DATABASE_URL.includes('localhost') &&
+  !DATABASE_URL.includes('127.0.0.1') &&
+  !DATABASE_URL.includes('/var/run/postgresql');
 
 export const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -18,12 +33,14 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
-console.log(`🔌 PostgreSQL: ${DATABASE_URL ? 'URL configured' : '❌ DATABASE_URL missing'} | SSL: ${useSSL}`);
+console.log(
+  `🔌 PostgreSQL: ${DATABASE_URL ? 'URL configured' : '❌ DATABASE_URL missing'} | SSL: ${useSSL}`
+);
 
 // ============================================================
 // HELPERS
 // ============================================================
-const json = (value: unknown, fallback: unknown[] = []) => {
+const json = (value: unknown, fallback: any[] = []): any[] => {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
     try {
@@ -32,7 +49,7 @@ const json = (value: unknown, fallback: unknown[] = []) => {
       return fallback;
     }
   }
-  return value ?? fallback;
+  return (value as any) ?? fallback;
 };
 
 const mapRow = (row: any): any => {
@@ -41,20 +58,23 @@ const mapRow = (row: any): any => {
   for (const [key, value] of Object.entries(row)) {
     mapped[key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
-  // JSON fields stored as JSONB
+  // Parse JSONB columns back into JS arrays
   for (const field of ['inclusions', 'availableDates', 'itinerary', 'discounts', 'persons']) {
     if (field in mapped) mapped[field] = json(mapped[field]);
   }
-  // Date fields → ISO strings
+  // Convert Date objects to ISO strings
   for (const field of ['createdAt', 'updatedAt', 'lastLogin', 'sentAt']) {
-    if (mapped[field] instanceof Date) mapped[field] = mapped[field].toISOString();
+    if (mapped[field] instanceof Date) {
+      mapped[field] = (mapped[field] as Date).toISOString();
+    }
   }
   return mapped;
 };
 
 const rows = (result: { rows: any[] }) => result.rows.map(mapRow);
 const one = (result: { rows: any[] }) => mapRow(result.rows[0]);
-const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+const makeId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 
 // ============================================================
 // CONNECTION TEST
@@ -71,9 +91,10 @@ export async function testConnection(): Promise<boolean> {
 }
 
 // ============================================================
-// TABLE CREATION
+// TABLE CREATION + MIGRATIONS
 // ============================================================
 async function createTables(client: PoolClient) {
+  // 1. Create all tables (idempotent — safe to run every startup)
   await client.query(`
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -109,11 +130,11 @@ async function createTables(client: PoolClient) {
       base_price_sar NUMERIC,
       duration_days INTEGER NOT NULL,
       departure_city TEXT DEFAULT 'Addis Ababa',
-      inclusions JSONB NOT NULL DEFAULT '[]',
-      available_dates JSONB NOT NULL DEFAULT '[]',
-      itinerary JSONB NOT NULL DEFAULT '[]',
-      discounts JSONB NOT NULL DEFAULT '[]',
-      persons JSONB NOT NULL DEFAULT '[]',
+      inclusions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      available_dates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      itinerary JSONB NOT NULL DEFAULT '[]'::jsonb,
+      discounts JSONB NOT NULL DEFAULT '[]'::jsonb,
+      persons JSONB NOT NULL DEFAULT '[]'::jsonb,
       image_url TEXT NOT NULL DEFAULT '',
       is_active BOOLEAN DEFAULT TRUE,
       whatsapp_clicks INTEGER DEFAULT 0,
@@ -243,23 +264,123 @@ async function createTables(client: PoolClient) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+
+  // 2. ✅ Safe migrations — add missing columns to existing tables
+  // (runs on every startup; IF NOT EXISTS prevents errors if column already exists)
+  await client.query(`
+    -- packages
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_type TEXT DEFAULT 'single';
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_usd_min NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_usd_max NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb_min NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb_max NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar_min NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar_max NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS base_price_usd NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS base_price_etb NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS base_price_sar NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS discounts JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS persons JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS whatsapp_clicks INTEGER DEFAULT 0;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS departure_city TEXT DEFAULT 'Addis Ababa';
+
+    -- gallery
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS thumbnail_url TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS video_url TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS duration TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- subscribers
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT '';
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS package_interest_id TEXT;
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS opt_in_status BOOLEAN DEFAULT TRUE;
+
+    -- inquiries
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT '';
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS source TEXT DEFAULT '';
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
+
+    -- sms_logs
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS campaign_name TEXT;
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Delivered';
+
+    -- faqs
+    ALTER TABLE faqs ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- social_links
+    ALTER TABLE social_links ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '';
+    ALTER TABLE social_links ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- team_members
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT '';
+
+    -- office_images
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- testimonials
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS text_ar TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS package_taken TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS date TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS rating NUMERIC DEFAULT 5;
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- price_logs
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_usd NUMERIC;
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_etb NUMERIC;
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_sar NUMERIC;
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS updated_by TEXT DEFAULT 'Admin';
+
+    -- admin_users
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+  `);
 }
 
 // ============================================================
-// DATABASE INITIALIZATION
+// DATABASE INITIALIZATION + SEED ADMIN
 // ============================================================
 export async function initDatabase(): Promise<void> {
   const client = await pool.connect();
   try {
     await createTables(client);
-    const passwordHash = await bcrypt.hash('admin123', 10);
-    await client.query(
-      `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
-       VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
-       ON CONFLICT (username) DO NOTHING`,
-      ['usr-1', 'admin', 'admin@deltatravel.com', passwordHash]
-    );
-    console.log('✅ PostgreSQL tables initialized and default admin verified');
+
+    // ✅ Seed default admin (only if no admin exists)
+    const existingAdmins = await client.query('SELECT COUNT(*) FROM admin_users');
+if (Number(existingAdmins.rows[0].count) === 0) {
+  const passwordHash = await bcrypt.hash('Password_Admin@1526', 10);
+  await client.query(
+    `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
+     VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
+     ON CONFLICT (username) DO NOTHING`,
+    ['usr-1', 'adminUser', 'admin@deltatravel.com', passwordHash]
+  );
+  console.log('✅ Default admin created: adminUser / admin@deltatravel.com');
+} else {
+  console.log('✅ Admin users already exist, skipping seed');
+}
+
+
+    console.log('✅ PostgreSQL tables initialized and migrations applied');
   } finally {
     client.release();
   }
@@ -268,8 +389,14 @@ export async function initDatabase(): Promise<void> {
 // ============================================================
 // GENERIC CRUD HELPERS
 // ============================================================
-const list = (table: string, order = 'created_at DESC', where = '') => async () =>
-  rows(await pool.query(`SELECT * FROM ${table}${where ? ` WHERE ${where}` : ''} ORDER BY ${order}`));
+const list =
+  (table: string, order = 'created_at DESC', where = '') =>
+  async () =>
+    rows(
+      await pool.query(
+        `SELECT * FROM ${table}${where ? ` WHERE ${where}` : ''} ORDER BY ${order}`
+      )
+    );
 
 const find = (table: string) => async (value: string) =>
   one(await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [value]));
@@ -297,7 +424,9 @@ async function updateEntity(table: string, entityId: string, data: any, fields: 
   values.push(entityId);
   return one(
     await pool.query(
-      `UPDATE ${table} SET ${entries.map((field, i) => `${field} = $${i + 1}`).join(', ')}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`,
+      `UPDATE ${table} SET ${entries
+        .map((field, i) => `${field} = $${i + 1}`)
+        .join(', ')}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`,
       values
     )
   );
@@ -309,7 +438,9 @@ async function updateEntity(table: string, entityId: string, data: any, fields: 
 const packageFields = [
   'title_en', 'title_ar', 'title_am', 'category',
   'price_usd', 'price_etb', 'price_sar', 'price_type',
-  'price_usd_min', 'price_usd_max', 'price_etb_min', 'price_etb_max', 'price_sar_min', 'price_sar_max',
+  'price_usd_min', 'price_usd_max',
+  'price_etb_min', 'price_etb_max',
+  'price_sar_min', 'price_sar_max',
   'base_price_usd', 'base_price_etb', 'base_price_sar',
   'duration_days', 'departure_city',
   'inclusions', 'available_dates', 'itinerary', 'discounts', 'persons',
@@ -405,7 +536,12 @@ export const dbOperations = {
         sort_order: data.sortOrder,
         is_active: data.isActive,
       },
-      ['type', 'title_en', 'title_ar', 'image_url', 'thumbnail_url', 'video_url', 'duration', 'location', 'description', 'is_active', 'sort_order'],
+      [
+        'type', 'title_en', 'title_ar',
+        'image_url', 'thumbnail_url', 'video_url',
+        'duration', 'location', 'description',
+        'is_active', 'sort_order',
+      ],
       'gal'
     );
   },
@@ -440,7 +576,12 @@ export const dbOperations = {
         is_active: data.isActive,
         sort_order: data.sortOrder,
       },
-      ['type', 'title_en', 'title_ar', 'image_url', 'thumbnail_url', 'video_url', 'duration', 'location', 'description', 'is_active', 'sort_order']
+      [
+        'type', 'title_en', 'title_ar',
+        'image_url', 'thumbnail_url', 'video_url',
+        'duration', 'location', 'description',
+        'is_active', 'sort_order',
+      ]
     ),
 
   deleteGalleryItem: remove('gallery'),
@@ -558,7 +699,11 @@ export const dbOperations = {
 
   // ---------- TEAM MEMBERS ----------
   getAllTeamMembers: list('team_members', 'sort_order ASC, created_at DESC'),
-  getActiveTeamMembers: list('team_members', 'sort_order ASC, created_at DESC', 'is_active = TRUE'),
+  getActiveTeamMembers: list(
+    'team_members',
+    'sort_order ASC, created_at DESC',
+    'is_active = TRUE'
+  ),
   findTeamMemberById: find('team_members'),
 
   createTeamMember: (data: any) =>
@@ -581,7 +726,11 @@ export const dbOperations = {
 
   // ---------- OFFICE IMAGES ----------
   getAllOfficeImages: list('office_images', 'sort_order ASC, created_at DESC'),
-  getActiveOfficeImages: list('office_images', 'sort_order ASC, created_at DESC', 'is_active = TRUE'),
+  getActiveOfficeImages: list(
+    'office_images',
+    'sort_order ASC, created_at DESC',
+    'is_active = TRUE'
+  ),
   findOfficeImageById: find('office_images'),
 
   createOfficeImage: (data: any) =>
@@ -616,7 +765,10 @@ export const dbOperations = {
         package_taken: data.packageTaken,
         is_active: data.isActive,
       },
-      ['name', 'location', 'rating', 'text', 'text_ar', 'package_taken', 'date', 'avatar', 'is_active'],
+      [
+        'name', 'location', 'rating', 'text', 'text_ar',
+        'package_taken', 'date', 'avatar', 'is_active',
+      ],
       'test'
     ),
 
@@ -630,7 +782,10 @@ export const dbOperations = {
         package_taken: data.packageTaken,
         is_active: data.isActive,
       },
-      ['name', 'location', 'rating', 'text', 'text_ar', 'package_taken', 'date', 'avatar', 'is_active']
+      [
+        'name', 'location', 'rating', 'text', 'text_ar',
+        'package_taken', 'date', 'avatar', 'is_active',
+      ]
     ),
 
   deleteTestimonial: remove('testimonials'),
@@ -653,15 +808,9 @@ export const dbOperations = {
         updated_by: data.updatedBy,
       },
       [
-        'package_id',
-        'price_usd',
-        'price_etb',
-        'price_sar',
-        'previous_price_usd',
-        'previous_price_etb',
-        'previous_price_sar',
-        'reason',
-        'updated_by',
+        'package_id', 'price_usd', 'price_etb', 'price_sar',
+        'previous_price_usd', 'previous_price_etb', 'previous_price_sar',
+        'reason', 'updated_by',
       ],
       'pl'
     ),
@@ -680,7 +829,9 @@ export const dbOperations = {
   getAllAdminUsers: list('admin_users', 'created_at ASC'),
   findAdminUserById: find('admin_users'),
   findAdminUserByUsername: async (username: string) =>
-    one(await pool.query('SELECT * FROM admin_users WHERE LOWER(username)=LOWER($1)', [username])),
+    one(
+      await pool.query('SELECT * FROM admin_users WHERE LOWER(username)=LOWER($1)', [username])
+    ),
   findAdminUserByEmail: async (email: string) =>
     one(await pool.query('SELECT * FROM admin_users WHERE LOWER(email)=LOWER($1)', [email])),
 

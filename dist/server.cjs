@@ -43,7 +43,9 @@ var pool = new import_pg.Pool({
   ssl: useSSL ? { rejectUnauthorized: false } : false,
   connectionTimeoutMillis: 1e4
 });
-console.log(`\u{1F50C} PostgreSQL: ${DATABASE_URL ? "URL configured" : "\u274C DATABASE_URL missing"} | SSL: ${useSSL}`);
+console.log(
+  `\u{1F50C} PostgreSQL: ${DATABASE_URL ? "URL configured" : "\u274C DATABASE_URL missing"} | SSL: ${useSSL}`
+);
 var json = (value, fallback = []) => {
   if (Array.isArray(value)) return value;
   if (typeof value === "string") {
@@ -65,7 +67,9 @@ var mapRow = (row) => {
     if (field in mapped) mapped[field] = json(mapped[field]);
   }
   for (const field of ["createdAt", "updatedAt", "lastLogin", "sentAt"]) {
-    if (mapped[field] instanceof Date) mapped[field] = mapped[field].toISOString();
+    if (mapped[field] instanceof Date) {
+      mapped[field] = mapped[field].toISOString();
+    }
   }
   return mapped;
 };
@@ -118,11 +122,11 @@ async function createTables(client) {
       base_price_sar NUMERIC,
       duration_days INTEGER NOT NULL,
       departure_city TEXT DEFAULT 'Addis Ababa',
-      inclusions JSONB NOT NULL DEFAULT '[]',
-      available_dates JSONB NOT NULL DEFAULT '[]',
-      itinerary JSONB NOT NULL DEFAULT '[]',
-      discounts JSONB NOT NULL DEFAULT '[]',
-      persons JSONB NOT NULL DEFAULT '[]',
+      inclusions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      available_dates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      itinerary JSONB NOT NULL DEFAULT '[]'::jsonb,
+      discounts JSONB NOT NULL DEFAULT '[]'::jsonb,
+      persons JSONB NOT NULL DEFAULT '[]'::jsonb,
       image_url TEXT NOT NULL DEFAULT '',
       is_active BOOLEAN DEFAULT TRUE,
       whatsapp_clicks INTEGER DEFAULT 0,
@@ -252,24 +256,121 @@ async function createTables(client) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  await client.query(`
+    -- packages
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_type TEXT DEFAULT 'single';
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_usd_min NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_usd_max NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb_min NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb_max NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar_min NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar_max NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS base_price_usd NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS base_price_etb NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS base_price_sar NUMERIC;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS discounts JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS persons JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS whatsapp_clicks INTEGER DEFAULT 0;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS departure_city TEXT DEFAULT 'Addis Ababa';
+
+    -- gallery
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS thumbnail_url TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS video_url TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS duration TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE gallery ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- subscribers
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT '';
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS package_interest_id TEXT;
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS opt_in_status BOOLEAN DEFAULT TRUE;
+
+    -- inquiries
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT '';
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS source TEXT DEFAULT '';
+    ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
+
+    -- sms_logs
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS campaign_name TEXT;
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Delivered';
+
+    -- faqs
+    ALTER TABLE faqs ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- social_links
+    ALTER TABLE social_links ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '';
+    ALTER TABLE social_links ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- team_members
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';
+    ALTER TABLE team_members ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT '';
+
+    -- office_images
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE office_images ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- testimonials
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS text_ar TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS package_taken TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS date TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '';
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS rating NUMERIC DEFAULT 5;
+    ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    -- price_logs
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_usd NUMERIC;
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_etb NUMERIC;
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_sar NUMERIC;
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
+    ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS updated_by TEXT DEFAULT 'Admin';
+
+    -- admin_users
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+  `);
 }
 async function initDatabase() {
   const client = await pool.connect();
   try {
     await createTables(client);
-    const passwordHash = await import_bcryptjs.default.hash("admin123", 10);
-    await client.query(
-      `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
-       VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
-       ON CONFLICT (username) DO NOTHING`,
-      ["usr-1", "admin", "admin@deltatravel.com", passwordHash]
-    );
-    console.log("\u2705 PostgreSQL tables initialized and default admin verified");
+    const existingAdmins = await client.query("SELECT COUNT(*) FROM admin_users");
+    if (Number(existingAdmins.rows[0].count) === 0) {
+      const passwordHash = await import_bcryptjs.default.hash("Password_Admin@1526", 10);
+      await client.query(
+        `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
+     VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
+     ON CONFLICT (username) DO NOTHING`,
+        ["usr-1", "adminUser", "admin@deltatravel.com", passwordHash]
+      );
+      console.log("\u2705 Default admin created: adminUser / admin@deltatravel.com");
+    } else {
+      console.log("\u2705 Admin users already exist, skipping seed");
+    }
+    console.log("\u2705 PostgreSQL tables initialized and migrations applied");
   } finally {
     client.release();
   }
 }
-var list = (table, order = "created_at DESC", where = "") => async () => rows(await pool.query(`SELECT * FROM ${table}${where ? ` WHERE ${where}` : ""} ORDER BY ${order}`));
+var list = (table, order = "created_at DESC", where = "") => async () => rows(
+  await pool.query(
+    `SELECT * FROM ${table}${where ? ` WHERE ${where}` : ""} ORDER BY ${order}`
+  )
+);
 var find = (table) => async (value) => one(await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [value]));
 var remove = (table) => async (value) => one(await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [value]));
 async function createEntity(table, data, fields, prefix) {
@@ -391,7 +492,19 @@ var dbOperations = {
         sort_order: data.sortOrder,
         is_active: data.isActive
       },
-      ["type", "title_en", "title_ar", "image_url", "thumbnail_url", "video_url", "duration", "location", "description", "is_active", "sort_order"],
+      [
+        "type",
+        "title_en",
+        "title_ar",
+        "image_url",
+        "thumbnail_url",
+        "video_url",
+        "duration",
+        "location",
+        "description",
+        "is_active",
+        "sort_order"
+      ],
       "gal"
     );
   },
@@ -423,7 +536,19 @@ var dbOperations = {
       is_active: data.isActive,
       sort_order: data.sortOrder
     },
-    ["type", "title_en", "title_ar", "image_url", "thumbnail_url", "video_url", "duration", "location", "description", "is_active", "sort_order"]
+    [
+      "type",
+      "title_en",
+      "title_ar",
+      "image_url",
+      "thumbnail_url",
+      "video_url",
+      "duration",
+      "location",
+      "description",
+      "is_active",
+      "sort_order"
+    ]
   ),
   deleteGalleryItem: remove("gallery"),
   // ---------- SUBSCRIBERS ----------
@@ -517,7 +642,11 @@ var dbOperations = {
   deleteSocialLink: remove("social_links"),
   // ---------- TEAM MEMBERS ----------
   getAllTeamMembers: list("team_members", "sort_order ASC, created_at DESC"),
-  getActiveTeamMembers: list("team_members", "sort_order ASC, created_at DESC", "is_active = TRUE"),
+  getActiveTeamMembers: list(
+    "team_members",
+    "sort_order ASC, created_at DESC",
+    "is_active = TRUE"
+  ),
   findTeamMemberById: find("team_members"),
   createTeamMember: (data) => createEntity(
     "team_members",
@@ -534,7 +663,11 @@ var dbOperations = {
   deleteTeamMember: remove("team_members"),
   // ---------- OFFICE IMAGES ----------
   getAllOfficeImages: list("office_images", "sort_order ASC, created_at DESC"),
-  getActiveOfficeImages: list("office_images", "sort_order ASC, created_at DESC", "is_active = TRUE"),
+  getActiveOfficeImages: list(
+    "office_images",
+    "sort_order ASC, created_at DESC",
+    "is_active = TRUE"
+  ),
   findOfficeImageById: find("office_images"),
   createOfficeImage: (data) => createEntity(
     "office_images",
@@ -561,7 +694,17 @@ var dbOperations = {
       package_taken: data.packageTaken,
       is_active: data.isActive
     },
-    ["name", "location", "rating", "text", "text_ar", "package_taken", "date", "avatar", "is_active"],
+    [
+      "name",
+      "location",
+      "rating",
+      "text",
+      "text_ar",
+      "package_taken",
+      "date",
+      "avatar",
+      "is_active"
+    ],
     "test"
   ),
   updateTestimonial: (entityId, data) => updateEntity(
@@ -573,7 +716,17 @@ var dbOperations = {
       package_taken: data.packageTaken,
       is_active: data.isActive
     },
-    ["name", "location", "rating", "text", "text_ar", "package_taken", "date", "avatar", "is_active"]
+    [
+      "name",
+      "location",
+      "rating",
+      "text",
+      "text_ar",
+      "package_taken",
+      "date",
+      "avatar",
+      "is_active"
+    ]
   ),
   deleteTestimonial: remove("testimonials"),
   // ---------- PRICE LOGS ----------
@@ -615,7 +768,9 @@ var dbOperations = {
   // ---------- ADMIN USERS ----------
   getAllAdminUsers: list("admin_users", "created_at ASC"),
   findAdminUserById: find("admin_users"),
-  findAdminUserByUsername: async (username) => one(await pool.query("SELECT * FROM admin_users WHERE LOWER(username)=LOWER($1)", [username])),
+  findAdminUserByUsername: async (username) => one(
+    await pool.query("SELECT * FROM admin_users WHERE LOWER(username)=LOWER($1)", [username])
+  ),
   findAdminUserByEmail: async (email) => one(await pool.query("SELECT * FROM admin_users WHERE LOWER(email)=LOWER($1)", [email])),
   createAdminUser: (data) => createEntity(
     "admin_users",
