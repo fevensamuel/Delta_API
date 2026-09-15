@@ -366,19 +366,18 @@ export async function initDatabase(): Promise<void> {
 
     // ✅ Seed default admin (only if no admin exists)
     const existingAdmins = await client.query('SELECT COUNT(*) FROM admin_users');
-if (Number(existingAdmins.rows[0].count) === 0) {
-  const passwordHash = await bcrypt.hash('Password_Admin@1526', 10);
-  await client.query(
-    `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
-     VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
-     ON CONFLICT (username) DO NOTHING`,
-    ['usr-1', 'adminUser', 'admin@deltatravel.com', passwordHash]
-  );
-  console.log('✅ Default admin created: adminUser / admin@deltatravel.com');
-} else {
-  console.log('✅ Admin users already exist, skipping seed');
-}
-
+    if (Number(existingAdmins.rows[0].count) === 0) {
+      const passwordHash = await bcrypt.hash('Password_Admin@1526', 10);
+      await client.query(
+        `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
+         VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
+         ON CONFLICT (username) DO NOTHING`,
+        ['usr-1', 'adminUser', 'admin@deltatravel.com', passwordHash]
+      );
+      console.log('✅ Default admin created: adminUser / admin@deltatravel.com');
+    } else {
+      console.log('✅ Admin users already exist, skipping seed');
+    }
 
     console.log('✅ PostgreSQL tables initialized and migrations applied');
   } finally {

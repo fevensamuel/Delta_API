@@ -353,8 +353,8 @@ async function initDatabase() {
       const passwordHash = await import_bcryptjs.default.hash("Password_Admin@1526", 10);
       await client.query(
         `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
-     VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
-     ON CONFLICT (username) DO NOTHING`,
+         VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
+         ON CONFLICT (username) DO NOTHING`,
         ["usr-1", "adminUser", "admin@deltatravel.com", passwordHash]
       );
       console.log("\u2705 Default admin created: adminUser / admin@deltatravel.com");
