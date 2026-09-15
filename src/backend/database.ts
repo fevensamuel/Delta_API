@@ -268,7 +268,6 @@ async function createTables(client: PoolClient) {
   `);
 
   // 2. ✅ Safe migrations — add missing columns to existing tables
-  // (runs on every startup; IF NOT EXISTS prevents errors if column already exists)
   await client.query(`
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
@@ -344,6 +343,30 @@ async function createTables(client: PoolClient) {
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
   `);
+
+  // 3. ✅ Fix existing NULL values — normalize is_active to TRUE where missing
+  await client.query(`
+    UPDATE packages SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE gallery SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE faqs SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE social_links SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE team_members SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE office_images SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE testimonials SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
+  `);
+
+  // 4. ✅ Set database-level defaults for is_active (defense in depth)
+  await client.query(`
+    ALTER TABLE packages ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE gallery ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE faqs ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE social_links ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE team_members ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE office_images ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE testimonials ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
+  `);
 }
 
 // ============================================================
@@ -393,9 +416,17 @@ const find = (table: string) => async (value: string) =>
 const remove = (table: string) => async (value: string) =>
   one(await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [value]));
 
+// ✅ Helper: for any insert, default is_active to TRUE if undefined
+const defaultActive = (field: string, value: any) => {
+  if (field === 'is_active' && (value === undefined || value === null)) {
+    return true;
+  }
+  return value ?? null;
+};
+
 async function createEntity(table: string, data: any, fields: string[], prefix: string) {
   const entityId = data.id || makeId(prefix);
-  const values = [entityId, ...fields.map((field) => data[field] ?? null)];
+  const values = [entityId, ...fields.map((field) => defaultActive(field, data[field]))];
   return one(
     await pool.query(
       `INSERT INTO ${table} (id, ${fields.join(', ')}) VALUES (${values
@@ -409,7 +440,7 @@ async function createEntity(table: string, data: any, fields: string[], prefix: 
 async function updateEntity(table: string, entityId: string, data: any, fields: string[]) {
   const entries = fields.filter((field) => data[field] !== undefined);
   if (!entries.length) return find(table)(entityId);
-  const values = entries.map((field) => data[field]);
+  const values = entries.map((field) => defaultActive(field, data[field]));
   values.push(entityId);
   return one(
     await pool.query(
@@ -443,6 +474,10 @@ const packageData = (data: any) =>
       let value = data[camel];
       if (['inclusions', 'availableDates', 'itinerary', 'discounts', 'persons'].includes(camel)) {
         value = JSON.stringify(value ?? []);
+      }
+      // ✅ Default is_active to TRUE
+      if (camel === 'isActive' && (value === undefined || value === null)) {
+        value = true;
       }
       return [field, value];
     })

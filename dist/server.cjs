@@ -333,6 +333,26 @@ async function createTables(client) {
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
   `);
+  await client.query(`
+    UPDATE packages SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE gallery SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE faqs SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE social_links SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE team_members SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE office_images SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE testimonials SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
+  `);
+  await client.query(`
+    ALTER TABLE packages ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE gallery ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE faqs ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE social_links ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE team_members ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE office_images ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE testimonials ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
+  `);
 }
 async function initDatabase() {
   const client = await pool.connect();
@@ -363,9 +383,15 @@ var list = (table, order = "created_at DESC", where = "") => async () => rows(
 );
 var find = (table) => async (value) => one(await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [value]));
 var remove = (table) => async (value) => one(await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [value]));
+var defaultActive = (field, value) => {
+  if (field === "is_active" && (value === void 0 || value === null)) {
+    return true;
+  }
+  return value ?? null;
+};
 async function createEntity(table, data, fields, prefix) {
   const entityId = data.id || makeId(prefix);
-  const values = [entityId, ...fields.map((field) => data[field] ?? null)];
+  const values = [entityId, ...fields.map((field) => defaultActive(field, data[field]))];
   return one(
     await pool.query(
       `INSERT INTO ${table} (id, ${fields.join(", ")}) VALUES (${values.map((_, index) => `$${index + 1}`).join(", ")}) RETURNING *`,
@@ -376,7 +402,7 @@ async function createEntity(table, data, fields, prefix) {
 async function updateEntity(table, entityId, data, fields) {
   const entries = fields.filter((field) => data[field] !== void 0);
   if (!entries.length) return find(table)(entityId);
-  const values = entries.map((field) => data[field]);
+  const values = entries.map((field) => defaultActive(field, data[field]));
   values.push(entityId);
   return one(
     await pool.query(
@@ -420,6 +446,9 @@ var packageData = (data) => Object.fromEntries(
     let value = data[camel];
     if (["inclusions", "availableDates", "itinerary", "discounts", "persons"].includes(camel)) {
       value = JSON.stringify(value ?? []);
+    }
+    if (camel === "isActive" && (value === void 0 || value === null)) {
+      value = true;
     }
     return [field, value];
   })
