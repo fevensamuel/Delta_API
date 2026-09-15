@@ -26,10 +26,9 @@ async function startServer() {
     console.log('✅ Database initialization completed');
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
-    if (process.env.NODE_ENV === 'production') {
-      console.error('Exiting in production due to DB failure.');
-      process.exit(1);
-    }
+    console.error('⚠️  Server will continue running so migrations can retry on next request.');
+    // Do NOT exit — let the server run so the migration can be retried
+    // and so /health and error logs remain accessible.
   }
 
   // Initialize Exchange Rate Service
@@ -40,19 +39,29 @@ async function startServer() {
   // ============================================================
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/$/, '')) // strip trailing slash
     .filter(Boolean);
+
+  console.log('🌐 Allowed CORS origins:', allowedOrigins.length ? allowedOrigins : '(none)');
 
   app.use(
     cors({
       origin: function (origin, callback) {
+        // Allow requests with no origin (curl, Postman, server-to-server)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1) {
-          callback(null, true);
-        } else {
-          console.log('❌ Blocked by CORS:', origin);
-          callback(new Error('Not allowed by CORS'));
+
+        // If no origins configured, allow all (useful during setup)
+        if (allowedOrigins.length === 0) return callback(null, true);
+
+        const normalizedOrigin = origin.replace(/\/$/, '');
+        if (allowedOrigins.includes(normalizedOrigin)) {
+          return callback(null, true);
         }
+
+        console.warn('❌ CORS blocked origin:', origin);
+        // Do NOT throw — just refuse to add CORS headers.
+        // The browser will block the response, but the server won't crash.
+        return callback(null, false);
       },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Range'],
@@ -123,11 +132,9 @@ async function startServer() {
     res.setHeader('Access-Control-Allow-Origin', '*');
   };
 
-  // Main uploads folder
   app.use('/uploads', staticCors);
   app.use('/uploads', express.static(uploadPath, { setHeaders: setFileHeaders }));
 
-  // Sub-folders
   app.use('/uploads/images', staticCors);
   app.use('/uploads/images', express.static(imagesPath, { setHeaders: setFileHeaders }));
 

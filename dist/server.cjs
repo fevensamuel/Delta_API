@@ -37,7 +37,9 @@ var import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
 var import_pg = require("pg");
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var DATABASE_URL = process.env.DATABASE_URL || "";
-var useSSL = !DATABASE_URL.includes("localhost") && !DATABASE_URL.includes("127.0.0.1") && !DATABASE_URL.includes("/var/run/postgresql");
+var useSSL = process.env.DATABASE_SSL === "true" || /render\.com|heroku|amazonaws|neon\.tech|supabase\.co|railway\.app|sslmode=require/.test(
+  DATABASE_URL
+);
 var pool = new import_pg.Pool({
   connectionString: DATABASE_URL,
   ssl: useSSL ? { rejectUnauthorized: false } : false,
@@ -257,7 +259,6 @@ async function createTables(client) {
     );
   `);
   await client.query(`
-    -- packages
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar NUMERIC;
@@ -277,7 +278,6 @@ async function createTables(client) {
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS departure_city TEXT DEFAULT 'Addis Ababa';
 
-    -- gallery
     ALTER TABLE gallery ADD COLUMN IF NOT EXISTS thumbnail_url TEXT DEFAULT '';
     ALTER TABLE gallery ADD COLUMN IF NOT EXISTS video_url TEXT DEFAULT '';
     ALTER TABLE gallery ADD COLUMN IF NOT EXISTS duration TEXT DEFAULT '';
@@ -286,43 +286,35 @@ async function createTables(client) {
     ALTER TABLE gallery ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
     ALTER TABLE gallery ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
-    -- subscribers
     ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
     ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
     ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT '';
     ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS package_interest_id TEXT;
     ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS opt_in_status BOOLEAN DEFAULT TRUE;
 
-    -- inquiries
     ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
     ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT '';
     ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS source TEXT DEFAULT '';
     ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
 
-    -- sms_logs
     ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS campaign_name TEXT;
     ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Delivered';
 
-    -- faqs
     ALTER TABLE faqs ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
-    -- social_links
     ALTER TABLE social_links ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '';
     ALTER TABLE social_links ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
-    -- team_members
     ALTER TABLE team_members ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
     ALTER TABLE team_members ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     ALTER TABLE team_members ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';
     ALTER TABLE team_members ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT '';
 
-    -- office_images
     ALTER TABLE office_images ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
     ALTER TABLE office_images ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
     ALTER TABLE office_images ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
     ALTER TABLE office_images ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
-    -- testimonials
     ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS text_ar TEXT DEFAULT '';
     ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS package_taken TEXT DEFAULT '';
     ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '';
@@ -331,14 +323,12 @@ async function createTables(client) {
     ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS rating NUMERIC DEFAULT 5;
     ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
-    -- price_logs
     ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_usd NUMERIC;
     ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_etb NUMERIC;
     ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS previous_price_sar NUMERIC;
     ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
     ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS updated_by TEXT DEFAULT 'Admin';
 
-    -- admin_users
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
@@ -796,20 +786,45 @@ var dbOperations = {
       [entityId]
     )
   ),
-  // ---------- DASHBOARD ----------
+  // ---------- DASHBOARD (DEFENSIVE) ----------
   async getDashboardStats() {
-    return one(
-      await pool.query(`
-        SELECT
-          (SELECT COUNT(*) FROM packages)::int AS "totalPackages",
-          (SELECT COUNT(*) FROM packages WHERE is_active)::int AS "activePackages",
-          (SELECT COUNT(*) FROM gallery)::int AS "totalGalleryItems",
-          (SELECT COUNT(*) FROM inquiries)::int AS "totalInquiries",
-          (SELECT COUNT(*) FROM subscribers)::int AS "totalSubscribers",
-          (SELECT COALESCE(SUM(whatsapp_clicks),0))::int AS "totalWhatsappClicks",
-          (SELECT COUNT(*) FROM sms_logs WHERE sent_at >= date_trunc('month', NOW()))::int AS "smsSentThisMonth"
-      `)
-    );
+    const safe = async (sql, fallback = 0) => {
+      try {
+        const result = await pool.query(sql);
+        const value = result.rows[0]?.v;
+        return value === null || value === void 0 ? fallback : Number(value);
+      } catch (error) {
+        console.error("\u274C Dashboard stat query failed:", sql, error);
+        return fallback;
+      }
+    };
+    const [
+      totalPackages,
+      activePackages,
+      totalGalleryItems,
+      totalInquiries,
+      totalSubscribers,
+      totalWhatsappClicks,
+      smsSentThisMonth
+    ] = await Promise.all([
+      safe("SELECT COUNT(*)::int AS v FROM packages"),
+      safe("SELECT COUNT(*)::int AS v FROM packages WHERE is_active"),
+      safe("SELECT COUNT(*)::int AS v FROM gallery"),
+      safe("SELECT COUNT(*)::int AS v FROM inquiries"),
+      safe("SELECT COUNT(*)::int AS v FROM subscribers"),
+      safe("SELECT COALESCE(SUM(whatsapp_clicks),0)::int AS v FROM packages"),
+      safe(`SELECT COUNT(*)::int AS v FROM sms_logs
+            WHERE sent_at >= date_trunc('month', NOW())`)
+    ]);
+    return {
+      totalPackages,
+      activePackages,
+      totalGalleryItems,
+      totalInquiries,
+      totalSubscribers,
+      totalWhatsappClicks,
+      smsSentThisMonth
+    };
   }
 };
 
@@ -2919,23 +2934,22 @@ async function startServer() {
     console.log("\u2705 Database initialization completed");
   } catch (error) {
     console.error("\u274C Database initialization failed:", error);
-    if (process.env.NODE_ENV === "production") {
-      console.error("Exiting in production due to DB failure.");
-      process.exit(1);
-    }
+    console.error("\u26A0\uFE0F  Server will continue running so migrations can retry on next request.");
   }
   initExchangeRateService();
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean);
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim().replace(/\/$/, "")).filter(Boolean);
+  console.log("\u{1F310} Allowed CORS origins:", allowedOrigins.length ? allowedOrigins : "(none)");
   app.use(
     (0, import_cors.default)({
       origin: function(origin, callback) {
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1) {
-          callback(null, true);
-        } else {
-          console.log("\u274C Blocked by CORS:", origin);
-          callback(new Error("Not allowed by CORS"));
+        if (allowedOrigins.length === 0) return callback(null, true);
+        const normalizedOrigin = origin.replace(/\/$/, "");
+        if (allowedOrigins.includes(normalizedOrigin)) {
+          return callback(null, true);
         }
+        console.warn("\u274C CORS blocked origin:", origin);
+        return callback(null, false);
       },
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Range"],
