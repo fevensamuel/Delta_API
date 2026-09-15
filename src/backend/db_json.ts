@@ -21,8 +21,17 @@ import type {
 // Only one admin user with password "admin123"
 const DEFAULT_PASSWORD_HASH = bcrypt.hashSync('admin123', 10);
 
-// Paths
-const DATA_FILE = path.join(process.cwd(), 'data.json');
+// ✅ DATA FILE PATH - Configurable via env var for cPanel persistence
+const DATA_FILE = process.env.DATA_PATH
+  ? path.resolve(process.env.DATA_PATH)
+  : path.join(process.cwd(), 'data.json');
+
+// Ensure the parent directory exists
+const DATA_DIR = path.dirname(DATA_FILE);
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  console.log(`📁 Created data directory: ${DATA_DIR}`);
+}
 
 interface DatabaseData {
   packages: TravelPackage[];
@@ -54,6 +63,7 @@ class DatabaseStore {
   public testimonials: Testimonial[] = [];
 
   constructor() {
+    console.log(`📂 Data file path: ${DATA_FILE}`);
     this.loadFromFile();
     if (this.packages.length === 0 && this.gallery.length === 0 && this.adminUsers.length === 0) {
       this.seedDefaults();
@@ -93,6 +103,8 @@ class DatabaseStore {
 
   public saveToFile() {
     try {
+      // ✅ Atomic write: write to temp file, then rename (prevents corruption)
+      const tempFile = `${DATA_FILE}.tmp`;
       const data: DatabaseData = {
         packages: this.packages,
         subscribers: this.subscribers,
@@ -107,7 +119,10 @@ class DatabaseStore {
         officeImages: this.officeImages,
         testimonials: this.testimonials,
       };
-      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      
+      fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+      fs.renameSync(tempFile, DATA_FILE);
+      
       console.log(`💾 Saved ${this.packages.length} packages, ${this.gallery.length} gallery items, ${this.faqs.length} FAQs, ${this.teamMembers.length} team members, ${this.officeImages.length} office images, ${this.testimonials.length} testimonials to data.json`);
     } catch (err) {
       console.error('❌ Error saving data file:', err);
@@ -118,35 +133,15 @@ class DatabaseStore {
     const now = new Date().toISOString();
 
     // All arrays empty - data will be added via admin page
-    
-    // Default social links
     this.socialLinks = [];
-
-    // Default price logs
     this.priceLogs = [];
-
-    // Default FAQs 
     this.faqs = [];
-
-    // Default Team Members
     this.teamMembers = [];
-
-    // Default Packages - EMPTY
     this.packages = [];
-
-    // Default Office Images - EMPTY
     this.officeImages = [];
-
-    // Default Testimonials - EMPTY
     this.testimonials = [];
-
-    // Subscribers - EMPTY
     this.subscribers = [];
-
-    // Inquiries - EMPTY
     this.inquiries = [];
-
-    // Gallery - EMPTY
     this.gallery = [];
 
     // Admin users – only one default admin
@@ -176,7 +171,6 @@ class DatabaseStore {
   }
 
   addGalleryItem(item: GalleryItem) {
-    // Ensure thumbnailUrl is set for videos
     if (item.type === 'video' && !item.thumbnailUrl) {
       item.thumbnailUrl = item.imageUrl || '';
     }
@@ -280,15 +274,13 @@ class DatabaseStore {
 
   // ===== UPDATE METHODS =====
   updatePackage(index: number, pkg: TravelPackage, reason?: string) {
-    // Check if price changed
     const existing = this.packages[index];
     if (existing) {
-      const priceChanged = existing.priceUsd !== pkg.priceUsd || 
-                          existing.priceEtb !== pkg.priceEtb || 
+      const priceChanged = existing.priceUsd !== pkg.priceUsd ||
+                          existing.priceEtb !== pkg.priceEtb ||
                           existing.priceSar !== pkg.priceSar;
       
       if (priceChanged) {
-        // Create price log with ETB as primary
         const log: PriceLog = {
           id: `pl-${Date.now()}`,
           packageId: pkg.id,

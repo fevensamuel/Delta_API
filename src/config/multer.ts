@@ -30,6 +30,10 @@ const storage = multer.diskStorage({
       console.log(`🏢 Saving office image to: ${officePath}`);
       cb(null, officePath);
     } 
+    else if (req.path && req.path.includes('/packages')) {
+      console.log(`📦 Saving package image to: ${packagesPath}`);
+      cb(null, packagesPath);
+    }
     else if (file.mimetype.startsWith('video/')) {
       console.log(`🎬 Saving video to: ${videosPath}`);
       cb(null, videosPath);

@@ -22,286 +22,638 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // server.ts
+var import_config = require("dotenv/config");
 var import_cors = __toESM(require("cors"), 1);
 var import_express2 = __toESM(require("express"), 1);
-var import_path4 = __toESM(require("path"), 1);
+var import_path2 = __toESM(require("path"), 1);
 var import_swagger_ui_express = __toESM(require("swagger-ui-express"), 1);
 
 // src/backend/routes.ts
 var import_express = require("express");
 var import_jsonwebtoken2 = __toESM(require("jsonwebtoken"), 1);
 var import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
-var import_multer2 = __toESM(require("multer"), 1);
-var import_path3 = __toESM(require("path"), 1);
-var import_fs3 = __toESM(require("fs"), 1);
-var import_fluent_ffmpeg = __toESM(require("fluent-ffmpeg"), 1);
 
-// src/backend/db.ts
+// src/backend/database.ts
+var import_pg = require("pg");
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
-var import_fs = __toESM(require("fs"), 1);
-var import_path = __toESM(require("path"), 1);
-var DEFAULT_PASSWORD_HASH = import_bcryptjs.default.hashSync("admin123", 10);
-var DATA_FILE = import_path.default.join(process.cwd(), "data.json");
-var DatabaseStore = class {
-  constructor() {
-    this.packages = [];
-    this.subscribers = [];
-    this.inquiries = [];
-    this.gallery = [];
-    this.adminUsers = [];
-    this.smsLogs = [];
-    this.socialLinks = [];
-    this.priceLogs = [];
-    this.faqs = [];
-    this.teamMembers = [];
-    this.officeImages = [];
-    this.testimonials = [];
-    this.loadFromFile();
-    if (this.packages.length === 0 && this.gallery.length === 0 && this.adminUsers.length === 0) {
-      this.seedDefaults();
-      this.saveToFile();
-    }
-  }
-  loadFromFile() {
+var pool = new import_pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  connectionTimeoutMillis: 1e4
+});
+var json = (value, fallback = []) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
     try {
-      if (import_fs.default.existsSync(DATA_FILE)) {
-        const raw = import_fs.default.readFileSync(DATA_FILE, "utf-8");
-        const data = JSON.parse(raw);
-        this.packages = data.packages || [];
-        this.subscribers = data.subscribers || [];
-        this.inquiries = data.inquiries || [];
-        this.gallery = data.gallery || [];
-        this.adminUsers = data.adminUsers || [];
-        this.smsLogs = data.smsLogs || [];
-        this.socialLinks = data.socialLinks || [];
-        this.priceLogs = data.priceLogs || [];
-        this.faqs = data.faqs || [];
-        this.teamMembers = data.teamMembers || [];
-        this.officeImages = data.officeImages || [];
-        this.testimonials = data.testimonials || [];
-        console.log(`\u{1F4C2} Loaded ${this.packages.length} packages, ${this.gallery.length} gallery items, ${this.faqs.length} FAQs, ${this.teamMembers.length} team members, ${this.officeImages.length} office images, ${this.testimonials.length} testimonials from data.json`);
-      } else {
-        console.log("\u{1F4C2} No data.json found, seeding defaults...");
-        this.seedDefaults();
-        this.saveToFile();
-      }
-    } catch (err) {
-      console.error("\u274C Error loading data file, seeding defaults:", err);
-      this.seedDefaults();
-      this.saveToFile();
+      return JSON.parse(value);
+    } catch {
+      return fallback;
     }
   }
-  saveToFile() {
-    try {
-      const data = {
-        packages: this.packages,
-        subscribers: this.subscribers,
-        inquiries: this.inquiries,
-        gallery: this.gallery,
-        adminUsers: this.adminUsers,
-        smsLogs: this.smsLogs,
-        socialLinks: this.socialLinks,
-        priceLogs: this.priceLogs,
-        faqs: this.faqs,
-        teamMembers: this.teamMembers,
-        officeImages: this.officeImages,
-        testimonials: this.testimonials
-      };
-      import_fs.default.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
-      console.log(`\u{1F4BE} Saved ${this.packages.length} packages, ${this.gallery.length} gallery items, ${this.faqs.length} FAQs, ${this.teamMembers.length} team members, ${this.officeImages.length} office images, ${this.testimonials.length} testimonials to data.json`);
-    } catch (err) {
-      console.error("\u274C Error saving data file:", err);
-    }
+  return value ?? fallback;
+};
+var mapRow = (row) => {
+  if (!row) return void 0;
+  const mapped = {};
+  for (const [key, value] of Object.entries(row)) {
+    mapped[key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
-  seedDefaults() {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.socialLinks = [];
-    this.priceLogs = [];
-    this.faqs = [];
-    this.teamMembers = [];
-    this.packages = [];
-    this.officeImages = [];
-    this.testimonials = [];
-    this.subscribers = [];
-    this.inquiries = [];
-    this.gallery = [];
-    this.adminUsers = [
+  for (const field of ["inclusions", "availableDates", "itinerary", "discounts", "persons"]) {
+    if (field in mapped) mapped[field] = json(mapped[field]);
+  }
+  for (const field of ["createdAt", "updatedAt", "lastLogin", "sentAt"]) {
+    if (mapped[field] instanceof Date) mapped[field] = mapped[field].toISOString();
+  }
+  return mapped;
+};
+var rows = (result) => result.rows.map(mapRow);
+var one = (result) => mapRow(result.rows[0]);
+var makeId = (prefix) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e5)}`;
+async function testConnection() {
+  try {
+    await pool.query("SELECT 1");
+    console.log("\u2705 PostgreSQL connection successful");
+    return true;
+  } catch (error) {
+    console.error("\u274C PostgreSQL connection failed:", error);
+    return false;
+  }
+}
+async function createTables(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT DEFAULT 'Admin',
+      last_login TIMESTAMPTZ,
+      is_active BOOLEAN DEFAULT TRUE,
+      status TEXT DEFAULT 'Active',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS packages (
+      id TEXT PRIMARY KEY,
+      title_en TEXT NOT NULL,
+      title_ar TEXT NOT NULL DEFAULT '',
+      title_am TEXT DEFAULT '',
+      category TEXT NOT NULL,
+      price_usd NUMERIC NOT NULL,
+      price_etb NUMERIC,
+      price_sar NUMERIC,
+      price_type TEXT DEFAULT 'single',
+      price_usd_min NUMERIC,
+      price_usd_max NUMERIC,
+      price_etb_min NUMERIC,
+      price_etb_max NUMERIC,
+      price_sar_min NUMERIC,
+      price_sar_max NUMERIC,
+      base_price_usd NUMERIC,
+      base_price_etb NUMERIC,
+      base_price_sar NUMERIC,
+      duration_days INTEGER NOT NULL,
+      departure_city TEXT DEFAULT 'Addis Ababa',
+      inclusions JSONB NOT NULL DEFAULT '[]',
+      available_dates JSONB NOT NULL DEFAULT '[]',
+      itinerary JSONB NOT NULL DEFAULT '[]',
+      discounts JSONB NOT NULL DEFAULT '[]',
+      persons JSONB NOT NULL DEFAULT '[]',
+      image_url TEXT NOT NULL DEFAULT '',
+      is_active BOOLEAN DEFAULT TRUE,
+      whatsapp_clicks INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS gallery (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      title_en TEXT NOT NULL,
+      title_ar TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
+      thumbnail_url TEXT DEFAULT '',
+      video_url TEXT DEFAULT '',
+      duration TEXT DEFAULT '',
+      location TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      is_active BOOLEAN DEFAULT TRUE,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS subscribers (
+      id TEXT PRIMARY KEY,
+      phone TEXT UNIQUE NOT NULL,
+      email TEXT DEFAULT '',
+      name TEXT DEFAULT '',
+      channel TEXT DEFAULT '',
+      package_interest_id TEXT,
+      opt_in_status BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS inquiries (
+      id TEXT PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT DEFAULT '',
+      subject TEXT DEFAULT '',
+      message TEXT NOT NULL,
+      source TEXT DEFAULT '',
+      status TEXT DEFAULT 'New',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS sms_logs (
+      id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT DEFAULT 'Delivered',
+      campaign_name TEXT,
+      sent_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS faqs (
+      id TEXT PRIMARY KEY,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS social_links (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      url TEXT NOT NULL,
+      is_active BOOLEAN DEFAULT TRUE,
+      icon TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS team_members (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      bio TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS office_images (
+      id TEXT PRIMARY KEY,
+      title TEXT DEFAULT '',
+      image_url TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS testimonials (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      location TEXT DEFAULT '',
+      rating NUMERIC DEFAULT 5,
+      text TEXT NOT NULL,
+      text_ar TEXT DEFAULT '',
+      package_taken TEXT DEFAULT '',
+      date TEXT DEFAULT '',
+      avatar TEXT DEFAULT '',
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS price_logs (
+      id TEXT PRIMARY KEY,
+      package_id TEXT NOT NULL,
+      price_usd NUMERIC,
+      price_etb NUMERIC,
+      price_sar NUMERIC,
+      previous_price_usd NUMERIC,
+      previous_price_etb NUMERIC,
+      previous_price_sar NUMERIC,
+      reason TEXT DEFAULT '',
+      updated_by TEXT DEFAULT 'Admin',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+}
+async function initDatabase() {
+  const client = await pool.connect();
+  try {
+    await createTables(client);
+    const passwordHash = await import_bcryptjs.default.hash("admin123", 10);
+    await client.query(
+      `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
+       VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
+       ON CONFLICT (username) DO NOTHING`,
+      ["usr-1", "admin", "admin@deltatravel.com", passwordHash]
+    );
+    console.log("\u2705 PostgreSQL tables initialized and default admin verified");
+  } finally {
+    client.release();
+  }
+}
+var list = (table, order = "created_at DESC", where = "") => async () => rows(await pool.query(`SELECT * FROM ${table}${where ? ` WHERE ${where}` : ""} ORDER BY ${order}`));
+var find = (table) => async (value) => one(await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [value]));
+var remove = (table) => async (value) => one(await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [value]));
+async function createEntity(table, data, fields, prefix) {
+  const entityId = data.id || makeId(prefix);
+  const values = [entityId, ...fields.map((field) => data[field] ?? null)];
+  return one(
+    await pool.query(
+      `INSERT INTO ${table} (id, ${fields.join(", ")}) VALUES (${values.map((_, index) => `$${index + 1}`).join(", ")}) RETURNING *`,
+      values
+    )
+  );
+}
+async function updateEntity(table, entityId, data, fields) {
+  const entries = fields.filter((field) => data[field] !== void 0);
+  if (!entries.length) return find(table)(entityId);
+  const values = entries.map((field) => data[field]);
+  values.push(entityId);
+  return one(
+    await pool.query(
+      `UPDATE ${table} SET ${entries.map((field, i) => `${field} = $${i + 1}`).join(", ")}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`,
+      values
+    )
+  );
+}
+var packageFields = [
+  "title_en",
+  "title_ar",
+  "title_am",
+  "category",
+  "price_usd",
+  "price_etb",
+  "price_sar",
+  "price_type",
+  "price_usd_min",
+  "price_usd_max",
+  "price_etb_min",
+  "price_etb_max",
+  "price_sar_min",
+  "price_sar_max",
+  "base_price_usd",
+  "base_price_etb",
+  "base_price_sar",
+  "duration_days",
+  "departure_city",
+  "inclusions",
+  "available_dates",
+  "itinerary",
+  "discounts",
+  "persons",
+  "image_url",
+  "is_active",
+  "whatsapp_clicks"
+];
+var packageData = (data) => Object.fromEntries(
+  packageFields.map((field) => {
+    const camel = field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    let value = data[camel];
+    if (["inclusions", "availableDates", "itinerary", "discounts", "persons"].includes(camel)) {
+      value = JSON.stringify(value ?? []);
+    }
+    return [field, value];
+  })
+);
+var dbOperations = {
+  // ---------- PACKAGES ----------
+  getAllPackages: list("packages"),
+  getActivePackages: list("packages", "created_at DESC", "is_active = TRUE"),
+  findPackageById: find("packages"),
+  async createPackage(data) {
+    const values = packageData(data);
+    return one(
+      await pool.query(
+        `INSERT INTO packages (id, ${packageFields.join(",")}) VALUES ($1, ${packageFields.map((_, i) => `$${i + 2}`).join(",")}) RETURNING *`,
+        [data.id || makeId("pkg"), ...packageFields.map((field) => values[field] ?? null)]
+      )
+    );
+  },
+  async updatePackage(entityId, data, reason) {
+    const existing = await this.findPackageById(entityId);
+    const updated = await updateEntity("packages", entityId, packageData(data), packageFields);
+    if (reason && existing && updated && (existing.priceUsd !== updated.priceUsd || existing.priceEtb !== updated.priceEtb || existing.priceSar !== updated.priceSar)) {
+      await this.createPriceLog({
+        packageId: entityId,
+        priceUsd: updated.priceUsd,
+        priceEtb: updated.priceEtb,
+        priceSar: updated.priceSar,
+        previousPriceUsd: existing.priceUsd,
+        previousPriceEtb: existing.priceEtb,
+        previousPriceSar: existing.priceSar,
+        reason,
+        updatedBy: "Admin"
+      });
+    }
+    return updated;
+  },
+  deletePackage: remove("packages"),
+  async incrementPackageWhatsappClicks(entityId) {
+    return one(
+      await pool.query(
+        "UPDATE packages SET whatsapp_clicks = whatsapp_clicks + 1, updated_at = NOW() WHERE id = $1 RETURNING *",
+        [entityId]
+      )
+    );
+  },
+  // ---------- GALLERY ----------
+  getAllGalleryItems: list("gallery", "sort_order ASC, created_at DESC"),
+  getActiveGalleryItems: list("gallery", "sort_order ASC, created_at DESC", "is_active = TRUE"),
+  findGalleryItemById: find("gallery"),
+  async createGalleryItem(data) {
+    return createEntity(
+      "gallery",
       {
-        id: "usr-1",
-        username: "admin",
-        email: "admin@deltatravel.com",
-        passwordHash: DEFAULT_PASSWORD_HASH,
-        role: "Admin",
-        lastLogin: null,
-        isActive: true,
-        status: "Active",
-        createdAt: now,
-        updatedAt: now
-      }
-    ];
-    this.smsLogs = [];
-  }
-  // ===== ADD METHODS =====
-  addPackage(pkg) {
-    this.packages.unshift(pkg);
-    this.saveToFile();
-  }
-  addGalleryItem(item) {
-    if (item.type === "video" && !item.thumbnailUrl) {
-      item.thumbnailUrl = item.imageUrl || "";
+        ...data,
+        title_en: data.titleEn,
+        title_ar: data.titleAr,
+        image_url: data.imageUrl,
+        thumbnail_url: data.thumbnailUrl,
+        video_url: data.videoUrl,
+        sort_order: data.sortOrder,
+        is_active: data.isActive
+      },
+      ["type", "title_en", "title_ar", "image_url", "thumbnail_url", "video_url", "duration", "location", "description", "is_active", "sort_order"],
+      "gal"
+    );
+  },
+  async createManyGalleryItems(items) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const created = [];
+      for (const item of items) created.push(await this.createGalleryItem(item));
+      await client.query("COMMIT");
+      return created;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
     }
-    this.gallery.unshift(item);
-    this.saveToFile();
-  }
-  addSubscriber(sub) {
-    this.subscribers.unshift(sub);
-    this.saveToFile();
-  }
-  addInquiry(inquiry) {
-    this.inquiries.unshift(inquiry);
-    this.saveToFile();
-  }
-  addSmsLog(log) {
-    this.smsLogs.unshift(log);
-    this.saveToFile();
-  }
-  addAdminUser(user) {
-    this.adminUsers.push(user);
-    this.saveToFile();
-  }
-  addSocialLink(link) {
-    this.socialLinks.push(link);
-    this.saveToFile();
-  }
-  addPriceLog(log) {
-    this.priceLogs.unshift(log);
-    this.saveToFile();
-  }
-  // ===== FAQ METHODS =====
-  addFaq(faq) {
-    this.faqs.push(faq);
-    this.saveToFile();
-  }
-  updateFaq(index, faq) {
-    this.faqs[index] = faq;
-    this.saveToFile();
-  }
-  deleteFaq(index) {
-    this.faqs.splice(index, 1);
-    this.saveToFile();
-  }
-  // ===== TEAM MEMBER METHODS =====
-  addTeamMember(member) {
-    this.teamMembers.push(member);
-    this.saveToFile();
-  }
-  updateTeamMember(index, member) {
-    this.teamMembers[index] = member;
-    this.saveToFile();
-  }
-  deleteTeamMember(index) {
-    this.teamMembers.splice(index, 1);
-    this.saveToFile();
-  }
-  // ===== OFFICE IMAGE METHODS =====
-  addOfficeImage(image) {
-    this.officeImages.push(image);
-    this.saveToFile();
-  }
-  updateOfficeImage(index, image) {
-    this.officeImages[index] = image;
-    this.saveToFile();
-  }
-  deleteOfficeImage(index) {
-    this.officeImages.splice(index, 1);
-    this.saveToFile();
-  }
-  // ===== TESTIMONIAL METHODS =====
-  addTestimonial(testimonial) {
-    this.testimonials.push(testimonial);
-    this.saveToFile();
-  }
-  updateTestimonial(index, testimonial) {
-    this.testimonials[index] = testimonial;
-    this.saveToFile();
-  }
-  deleteTestimonial(index) {
-    this.testimonials.splice(index, 1);
-    this.saveToFile();
-  }
-  // ===== UPDATE METHODS =====
-  updatePackage(index, pkg, reason) {
-    const existing = this.packages[index];
-    if (existing) {
-      const priceChanged = existing.priceUsd !== pkg.priceUsd || existing.priceEtb !== pkg.priceEtb || existing.priceSar !== pkg.priceSar;
-      if (priceChanged) {
-        const log = {
-          id: `pl-${Date.now()}`,
-          packageId: pkg.id,
-          priceUsd: pkg.priceUsd,
-          priceEtb: pkg.priceEtb,
-          priceSar: pkg.priceSar,
-          previousPriceUsd: existing.priceUsd,
-          previousPriceEtb: existing.priceEtb,
-          previousPriceSar: existing.priceSar,
-          reason: reason || "Price updated via admin",
-          updatedBy: "Admin",
-          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        this.priceLogs.unshift(log);
-        console.log(`\u{1F4DD} Price log created for ${pkg.id}: ETB ${existing.priceEtb} -> ETB ${pkg.priceEtb}`);
-      }
-    }
-    this.packages[index] = pkg;
-    this.saveToFile();
-  }
-  updateGalleryItem(index, item) {
-    this.gallery[index] = item;
-    this.saveToFile();
-  }
-  updateSubscriber(index, sub) {
-    this.subscribers[index] = sub;
-    this.saveToFile();
-  }
-  updateInquiry(index, inquiry) {
-    this.inquiries[index] = inquiry;
-    this.saveToFile();
-  }
-  updateAdminUser(index, user) {
-    this.adminUsers[index] = user;
-    this.saveToFile();
-  }
-  updateSocialLink(index, link) {
-    this.socialLinks[index] = link;
-    this.saveToFile();
-  }
-  // ===== DELETE METHODS =====
-  deletePackage(index) {
-    this.packages.splice(index, 1);
-    this.saveToFile();
-  }
-  deleteGalleryItem(index) {
-    this.gallery.splice(index, 1);
-    this.saveToFile();
-  }
-  deleteSubscriber(index) {
-    this.subscribers.splice(index, 1);
-    this.saveToFile();
-  }
-  deleteInquiry(index) {
-    this.inquiries.splice(index, 1);
-    this.saveToFile();
-  }
-  deleteAdminUser(index) {
-    this.adminUsers.splice(index, 1);
-    this.saveToFile();
-  }
-  deleteSocialLink(index) {
-    this.socialLinks.splice(index, 1);
-    this.saveToFile();
+  },
+  updateGalleryItem: (entityId, data) => updateEntity(
+    "gallery",
+    entityId,
+    {
+      ...data,
+      title_en: data.titleEn,
+      title_ar: data.titleAr,
+      image_url: data.imageUrl,
+      thumbnail_url: data.thumbnailUrl,
+      video_url: data.videoUrl,
+      is_active: data.isActive,
+      sort_order: data.sortOrder
+    },
+    ["type", "title_en", "title_ar", "image_url", "thumbnail_url", "video_url", "duration", "location", "description", "is_active", "sort_order"]
+  ),
+  deleteGalleryItem: remove("gallery"),
+  // ---------- SUBSCRIBERS ----------
+  getAllSubscribers: list("subscribers"),
+  getOptedInSubscribers: list("subscribers", "created_at DESC", "opt_in_status = TRUE"),
+  findSubscriberByPhone: async (phone) => one(await pool.query("SELECT * FROM subscribers WHERE phone = $1", [phone])),
+  async createSubscriber(data) {
+    return one(
+      await pool.query(
+        `INSERT INTO subscribers (id, phone, email, name, channel, package_interest_id, opt_in_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (phone) DO UPDATE SET
+           email=EXCLUDED.email,
+           name=EXCLUDED.name,
+           channel=EXCLUDED.channel,
+           package_interest_id=EXCLUDED.package_interest_id,
+           opt_in_status=EXCLUDED.opt_in_status,
+           updated_at=NOW()
+         RETURNING *`,
+        [
+          data.id || makeId("sub"),
+          data.phone,
+          data.email || "",
+          data.name || "",
+          data.channel || "Web Form",
+          data.packageInterestId || null,
+          data.optInStatus !== false
+        ]
+      )
+    );
+  },
+  updateSubscriber: (entityId, data) => updateEntity(
+    "subscribers",
+    entityId,
+    {
+      email: data.email,
+      name: data.name,
+      channel: data.channel,
+      package_interest_id: data.packageInterestId,
+      opt_in_status: data.optInStatus
+    },
+    ["email", "name", "channel", "package_interest_id", "opt_in_status"]
+  ),
+  deleteSubscriber: remove("subscribers"),
+  async deleteSubscribers(ids = [], phones = []) {
+    const result = await pool.query(
+      "DELETE FROM subscribers WHERE id = ANY($1::text[]) OR phone = ANY($2::text[])",
+      [ids, phones]
+    );
+    return result.rowCount || 0;
+  },
+  async bulkImportSubscribers(items) {
+    return Promise.all(items.map((item) => this.createSubscriber(item)));
+  },
+  // ---------- INQUIRIES ----------
+  getAllInquiries: list("inquiries"),
+  findInquiryById: find("inquiries"),
+  createInquiry: (data) => createEntity(
+    "inquiries",
+    { ...data, full_name: data.fullName },
+    ["full_name", "phone", "email", "subject", "message", "source", "status"],
+    "inq"
+  ),
+  updateInquiryStatus: (entityId, status) => updateEntity("inquiries", entityId, { status }, ["status"]),
+  async updateManyInquiryStatus(ids, status) {
+    return rows(
+      await pool.query(
+        "UPDATE inquiries SET status=$1, updated_at=NOW() WHERE id=ANY($2::text[]) RETURNING *",
+        [status, ids]
+      )
+    );
+  },
+  deleteInquiry: remove("inquiries"),
+  async deleteManyInquiries(ids) {
+    const result = await pool.query("DELETE FROM inquiries WHERE id=ANY($1::text[])", [ids]);
+    return result.rowCount || 0;
+  },
+  // ---------- FAQS ----------
+  getAllFaqs: list("faqs"),
+  getActiveFaqs: list("faqs", "created_at DESC", "is_active = TRUE"),
+  findFaqById: find("faqs"),
+  createFaq: (data) => createEntity("faqs", data, ["question", "answer", "is_active"], "faq"),
+  updateFaq: (entityId, data) => updateEntity("faqs", entityId, data, ["question", "answer", "is_active"]),
+  deleteFaq: remove("faqs"),
+  // ---------- SOCIAL LINKS ----------
+  getAllSocialLinks: list("social_links"),
+  getActiveSocialLinks: list("social_links", "created_at DESC", "is_active = TRUE"),
+  findSocialLinkById: find("social_links"),
+  createSocialLink: (data) => createEntity("social_links", data, ["platform", "url", "is_active", "icon"], "sl"),
+  updateSocialLink: (entityId, data) => updateEntity("social_links", entityId, data, ["platform", "url", "is_active", "icon"]),
+  deleteSocialLink: remove("social_links"),
+  // ---------- TEAM MEMBERS ----------
+  getAllTeamMembers: list("team_members", "sort_order ASC, created_at DESC"),
+  getActiveTeamMembers: list("team_members", "sort_order ASC, created_at DESC", "is_active = TRUE"),
+  findTeamMemberById: find("team_members"),
+  createTeamMember: (data) => createEntity(
+    "team_members",
+    { ...data, image_url: data.imageUrl, sort_order: data.order },
+    ["name", "role", "bio", "image_url", "sort_order", "is_active"],
+    "team"
+  ),
+  updateTeamMember: (entityId, data) => updateEntity(
+    "team_members",
+    entityId,
+    data,
+    ["name", "role", "bio", "image_url", "sort_order", "is_active"]
+  ),
+  deleteTeamMember: remove("team_members"),
+  // ---------- OFFICE IMAGES ----------
+  getAllOfficeImages: list("office_images", "sort_order ASC, created_at DESC"),
+  getActiveOfficeImages: list("office_images", "sort_order ASC, created_at DESC", "is_active = TRUE"),
+  findOfficeImageById: find("office_images"),
+  createOfficeImage: (data) => createEntity(
+    "office_images",
+    { ...data, image_url: data.imageUrl, sort_order: data.order },
+    ["title", "image_url", "description", "sort_order", "is_active"],
+    "office"
+  ),
+  updateOfficeImage: (entityId, data) => updateEntity(
+    "office_images",
+    entityId,
+    data,
+    ["title", "image_url", "description", "sort_order", "is_active"]
+  ),
+  deleteOfficeImage: remove("office_images"),
+  // ---------- TESTIMONIALS ----------
+  getAllTestimonials: list("testimonials", "created_at DESC"),
+  getActiveTestimonials: list("testimonials", "created_at DESC", "is_active = TRUE"),
+  findTestimonialById: find("testimonials"),
+  createTestimonial: (data) => createEntity(
+    "testimonials",
+    {
+      ...data,
+      text_ar: data.textAr,
+      package_taken: data.packageTaken,
+      is_active: data.isActive
+    },
+    ["name", "location", "rating", "text", "text_ar", "package_taken", "date", "avatar", "is_active"],
+    "test"
+  ),
+  updateTestimonial: (entityId, data) => updateEntity(
+    "testimonials",
+    entityId,
+    {
+      ...data,
+      text_ar: data.textAr,
+      package_taken: data.packageTaken,
+      is_active: data.isActive
+    },
+    ["name", "location", "rating", "text", "text_ar", "package_taken", "date", "avatar", "is_active"]
+  ),
+  deleteTestimonial: remove("testimonials"),
+  // ---------- PRICE LOGS ----------
+  getAllPriceLogs: list("price_logs", "updated_at DESC"),
+  createPriceLog: (data) => createEntity(
+    "price_logs",
+    {
+      ...data,
+      package_id: data.packageId,
+      price_usd: data.priceUsd,
+      price_etb: data.priceEtb,
+      price_sar: data.priceSar,
+      previous_price_usd: data.previousPriceUsd,
+      previous_price_etb: data.previousPriceEtb,
+      previous_price_sar: data.previousPriceSar,
+      updated_by: data.updatedBy
+    },
+    [
+      "package_id",
+      "price_usd",
+      "price_etb",
+      "price_sar",
+      "previous_price_usd",
+      "previous_price_etb",
+      "previous_price_sar",
+      "reason",
+      "updated_by"
+    ],
+    "pl"
+  ),
+  // ---------- SMS LOGS ----------
+  getAllSmsLogs: list("sms_logs", "sent_at DESC"),
+  createSmsLog: (data) => createEntity(
+    "sms_logs",
+    { ...data, campaign_name: data.campaignName },
+    ["phone", "message", "status", "campaign_name"],
+    "sms"
+  ),
+  // ---------- ADMIN USERS ----------
+  getAllAdminUsers: list("admin_users", "created_at ASC"),
+  findAdminUserById: find("admin_users"),
+  findAdminUserByUsername: async (username) => one(await pool.query("SELECT * FROM admin_users WHERE LOWER(username)=LOWER($1)", [username])),
+  findAdminUserByEmail: async (email) => one(await pool.query("SELECT * FROM admin_users WHERE LOWER(email)=LOWER($1)", [email])),
+  createAdminUser: (data) => createEntity(
+    "admin_users",
+    {
+      ...data,
+      password_hash: data.passwordHash,
+      is_active: data.isActive,
+      last_login: data.lastLogin
+    },
+    ["username", "email", "password_hash", "role", "last_login", "is_active", "status"],
+    "usr"
+  ),
+  updateAdminUser: (entityId, data) => updateEntity(
+    "admin_users",
+    entityId,
+    { ...data, password_hash: data.passwordHash, is_active: data.isActive },
+    ["username", "email", "password_hash", "role", "is_active", "status"]
+  ),
+  deleteAdminUser: remove("admin_users"),
+  updateAdminUserLastLogin: async (entityId) => one(
+    await pool.query(
+      "UPDATE admin_users SET last_login=NOW(), updated_at=NOW() WHERE id=$1 RETURNING *",
+      [entityId]
+    )
+  ),
+  // ---------- DASHBOARD ----------
+  async getDashboardStats() {
+    return one(
+      await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM packages)::int AS "totalPackages",
+          (SELECT COUNT(*) FROM packages WHERE is_active)::int AS "activePackages",
+          (SELECT COUNT(*) FROM gallery)::int AS "totalGalleryItems",
+          (SELECT COUNT(*) FROM inquiries)::int AS "totalInquiries",
+          (SELECT COUNT(*) FROM subscribers)::int AS "totalSubscribers",
+          (SELECT COALESCE(SUM(whatsapp_clicks),0))::int AS "totalWhatsappClicks",
+          (SELECT COUNT(*) FROM sms_logs WHERE sent_at >= date_trunc('month', NOW()))::int AS "smsSentThisMonth"
+      `)
+    );
   }
 };
-var db = new DatabaseStore();
 
 // src/services/exchangeRateService.ts
 var cachedRateData = null;
@@ -423,17 +775,17 @@ function initExchangeRateService() {
 
 // src/config/multer.ts
 var import_multer = __toESM(require("multer"), 1);
-var import_path2 = __toESM(require("path"), 1);
-var import_fs2 = __toESM(require("fs"), 1);
-var uploadPath = import_path2.default.resolve(process.env.UPLOAD_PATH || "./uploads");
-var videosPath = import_path2.default.join(uploadPath, "videos");
-var imagesPath = import_path2.default.join(uploadPath, "images");
-var packagesPath = import_path2.default.join(uploadPath, "packages");
-var teamPath = import_path2.default.join(uploadPath, "team");
-var officePath = import_path2.default.join(uploadPath, "office");
+var import_path = __toESM(require("path"), 1);
+var import_fs = __toESM(require("fs"), 1);
+var uploadPath = import_path.default.resolve(process.env.UPLOAD_PATH || "./uploads");
+var videosPath = import_path.default.join(uploadPath, "videos");
+var imagesPath = import_path.default.join(uploadPath, "images");
+var packagesPath = import_path.default.join(uploadPath, "packages");
+var teamPath = import_path.default.join(uploadPath, "team");
+var officePath = import_path.default.join(uploadPath, "office");
 [videosPath, imagesPath, packagesPath, teamPath, officePath].forEach((dir) => {
-  if (!import_fs2.default.existsSync(dir)) {
-    import_fs2.default.mkdirSync(dir, { recursive: true });
+  if (!import_fs.default.existsSync(dir)) {
+    import_fs.default.mkdirSync(dir, { recursive: true });
   }
 });
 var storage = import_multer.default.diskStorage({
@@ -444,6 +796,9 @@ var storage = import_multer.default.diskStorage({
     } else if (req.path && req.path.includes("/office")) {
       console.log(`\u{1F3E2} Saving office image to: ${officePath}`);
       cb(null, officePath);
+    } else if (req.path && req.path.includes("/packages")) {
+      console.log(`\u{1F4E6} Saving package image to: ${packagesPath}`);
+      cb(null, packagesPath);
     } else if (file.mimetype.startsWith("video/")) {
       console.log(`\u{1F3AC} Saving video to: ${videosPath}`);
       cb(null, videosPath);
@@ -484,14 +839,6 @@ var teamUpload = upload.single("image");
 var packageUpload = upload.single("packageImage");
 var bulkUpload = upload.array("files", 50);
 var officeUpload = upload.single("image");
-var uploadPaths = {
-  uploadPath,
-  videosPath,
-  imagesPath,
-  packagesPath,
-  teamPath,
-  officePath
-};
 
 // src/backend/middleware.ts
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
@@ -517,2189 +864,710 @@ var authenticateJWT = (req, res, next) => {
 // src/backend/routes.ts
 var apiRouter = (0, import_express.Router)();
 var JWT_SECRET2 = process.env.JWT_SECRET || "delta_travel_super_secret_jwt_key_2026_256bit";
-var packageStorage = import_multer2.default.diskStorage({
-  destination: (req, file, cb) => {
-    const packagesPath2 = uploadPaths.packagesPath;
-    if (!import_fs3.default.existsSync(packagesPath2)) import_fs3.default.mkdirSync(packagesPath2, { recursive: true });
-    cb(null, packagesPath2);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-]/g, "_");
-    cb(null, uniqueSuffix + "-" + sanitizedName);
-  }
+var send = (res, data, status = 200) => res.status(status).json({ status: "success", success: true, data });
+var fail = (res, error, status = 500) => res.status(status).json({
+  status: "error",
+  success: false,
+  error: error instanceof Error ? error.message : String(error)
 });
-var packageUploadMiddleware = (0, import_multer2.default)({
-  storage: packageStorage,
-  limits: { fileSize: 500 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) cb(null, true);
-    else cb(new Error("Only images are allowed for package thumbnail"));
-  }
-}).single("packageImage");
-apiRouter.get("/exchange-rate", async (req, res) => {
+var parse = (value, fallback = []) => {
+  if (value === void 0 || value === null || value === "") return fallback;
+  if (typeof value !== "string") return value;
   try {
-    const rateData = await getExchangeRate();
-    res.json({
-      status: "success",
-      success: true,
-      data: {
-        rate: rateData.rate,
-        updatedAt: rateData.updatedAt,
-        source: rateData.source,
-        isFallback: rateData.isFallback
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ status: "error", success: false, error: "Failed to fetch exchange rate", details: error.message });
+    return JSON.parse(value);
+  } catch {
+    return fallback;
   }
-});
-apiRouter.get("/admin/exchange-rate", authenticateJWT, async (req, res) => {
-  try {
-    const rateData = await getExchangeRate();
-    res.json({
-      status: "success",
-      success: true,
-      data: {
-        rate: rateData.rate,
-        updatedAt: rateData.updatedAt,
-        source: rateData.source,
-        isFallback: rateData.isFallback
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ status: "error", success: false, error: "Failed to fetch exchange rate", details: error.message });
-  }
-});
-apiRouter.post("/admin/exchange-rate", authenticateJWT, (req, res) => {
-  const { rate } = req.body;
-  if (!rate || isNaN(Number(rate)) || Number(rate) <= 0) {
-    return res.status(400).json({ status: "error", success: false, error: "Valid rate number is required" });
-  }
-  const updatedData = setAdminOverrideRate(Number(rate));
-  res.json({
-    status: "success",
-    success: true,
-    message: "Exchange rate updated successfully",
-    data: updatedData
-  });
-});
-var handleLogin = async (req, res) => {
-  const { username, password } = req.body;
+};
+var bool = (value, fallback = true) => {
+  if (value === void 0 || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  return value === "true" || value === 1 || value === "1";
+};
+var asyncRoute = (handler) => (req, res, next) => handler(req, res).catch(next);
+var fileUrl = (req, field, fallback = "") => {
+  const file = req.file;
+  return file?.filename ? `/uploads/${field}/${file.filename}` : fallback;
+};
+async function login(req, res) {
+  const username = String(req.body.username || "").trim();
+  const password = String(req.body.password || "");
   if (!username || !password) {
-    return res.status(400).json({
-      status: "error",
-      success: false,
-      error: "Username and password are required"
-    });
+    return fail(res, "Username and password are required", 400);
   }
-  const user = db.adminUsers.find(
-    (u) => u.username.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === username.toLowerCase()
+  const user = await dbOperations.findAdminUserByUsername(username) || await dbOperations.findAdminUserByEmail(username);
+  if (!user || !user.isActive) {
+    return fail(res, "Invalid credentials", 401);
+  }
+  const passwordMatches = await import_bcryptjs2.default.compare(password, user.passwordHash);
+  if (!passwordMatches) {
+    return fail(res, "Invalid credentials", 401);
+  }
+  await dbOperations.updateAdminUserLastLogin(user.id);
+  const token = import_jsonwebtoken2.default.sign(
+    { id: user.id, username: user.username, email: user.email, role: user.role },
+    JWT_SECRET2,
+    { expiresIn: "24h" }
   );
-  if (!user) {
-    return res.status(401).json({
-      status: "error",
-      success: false,
-      error: "Invalid credentials"
-    });
-  }
-  if (!user.isActive) {
-    return res.status(401).json({
-      status: "error",
-      success: false,
-      error: "Account is inactive. Contact administrator."
-    });
-  }
-  const isPasswordValid = import_bcryptjs2.default.compareSync(password, user.passwordHash);
-  if (!isPasswordValid) {
-    return res.status(401).json({
-      status: "error",
-      success: false,
-      error: "Invalid credentials"
-    });
-  }
-  user.lastLogin = (/* @__PURE__ */ new Date()).toISOString();
-  db.saveToFile();
-  const tokenPayload = {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    role: user.role
-  };
-  const token = import_jsonwebtoken2.default.sign(tokenPayload, JWT_SECRET2, { expiresIn: "24h" });
-  return res.json({
-    status: "success",
-    success: true,
-    message: "Login successful",
+  return send(res, {
     token,
     user: {
-      id: String(user.id),
+      id: user.id,
       username: user.username,
       email: user.email,
       role: user.role,
       isActive: user.isActive,
-      status: user.status || "Active"
+      status: user.status
     }
   });
-};
-apiRouter.post("/login", handleLogin);
-apiRouter.post("/admin/login", handleLogin);
-apiRouter.post("/auth/login", handleLogin);
-apiRouter.post("/admin/auth/login", handleLogin);
-var handleGetMe = async (req, res) => {
-  const reqUser = req.user;
-  if (!reqUser) {
-    return res.status(401).json({ status: "error", success: false, error: "Unauthorized" });
-  }
-  const user = db.adminUsers.find((u) => u.id === reqUser.id);
-  if (!user) {
-    return res.status(404).json({ status: "error", success: false, error: "User not found" });
-  }
-  const userData = {
-    id: String(user.id),
-    username: user.username,
-    email: user.email,
-    role: user.role,
-    isActive: user.isActive,
-    status: user.status || "Active"
-  };
-  res.json({
-    status: "success",
-    success: true,
-    data: userData,
-    user: userData
-  });
-};
-apiRouter.get("/admin/me", authenticateJWT, handleGetMe);
-apiRouter.get("/admin/auth/me", authenticateJWT, handleGetMe);
-apiRouter.get("/admin/social-links", authenticateJWT, (req, res) => {
-  res.json({
-    status: "success",
-    success: true,
-    data: db.socialLinks
-  });
-});
-apiRouter.post("/admin/social-links", authenticateJWT, (req, res) => {
-  const { platform, url, isActive, icon } = req.body;
-  if (!platform || !url) {
-    return res.status(400).json({
-      status: "error",
-      success: false,
-      error: "Platform and URL are required"
-    });
-  }
-  const existing = db.socialLinks.find((s) => s.platform.toLowerCase() === platform.toLowerCase());
-  if (existing) {
-    return res.status(400).json({
-      status: "error",
-      success: false,
-      error: `Platform "${platform}" already exists`
-    });
-  }
-  const newLink = {
-    id: `sl-${Date.now()}`,
-    platform: platform.toLowerCase(),
-    url: url.trim(),
-    isActive: isActive !== void 0 ? isActive : true,
-    icon: icon || platform.charAt(0).toUpperCase() + platform.slice(1)
-  };
-  db.addSocialLink(newLink);
-  res.status(201).json({
-    status: "success",
-    success: true,
-    message: "Social Media link added successfully",
-    data: newLink
-  });
-});
-apiRouter.put("/admin/social-links/:id", authenticateJWT, (req, res) => {
-  const index = db.socialLinks.findIndex((s) => s.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Social Media link not found" });
-  }
-  const { url, isActive } = req.body;
-  const existing = db.socialLinks[index];
-  const updated = {
-    ...existing,
-    url: url !== void 0 ? url : existing.url,
-    isActive: isActive !== void 0 ? isActive : existing.isActive
-  };
-  db.updateSocialLink(index, updated);
-  res.json({
-    status: "success",
-    success: true,
-    message: "Social Media link updated successfully",
-    data: updated
-  });
-});
-apiRouter.delete("/admin/social-links/:id", authenticateJWT, (req, res) => {
-  const index = db.socialLinks.findIndex((s) => s.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Social Media link not found" });
-  }
-  db.deleteSocialLink(index);
-  res.json({
-    status: "success",
-    success: true,
-    message: "Social Media link deleted successfully"
-  });
-});
-apiRouter.get("/social-links", (req, res) => {
-  res.json({
-    status: "success",
-    success: true,
-    data: db.socialLinks.filter((s) => s.isActive !== false)
-  });
-});
-apiRouter.get("/faqs", (req, res) => {
-  res.json({
-    status: "success",
-    success: true,
-    count: db.faqs.length,
-    data: db.faqs
-  });
-});
-apiRouter.get("/admin/faqs", authenticateJWT, (req, res) => {
-  res.json({
-    status: "success",
-    success: true,
-    count: db.faqs.length,
-    data: db.faqs
-  });
-});
-apiRouter.post("/admin/faqs", authenticateJWT, (req, res) => {
-  const { question, answer } = req.body;
-  if (!question || !answer) {
-    return res.status(400).json({
-      status: "error",
-      success: false,
-      error: "Question and answer are required"
-    });
-  }
-  const existing = db.faqs.find((f) => f.question.toLowerCase() === question.trim().toLowerCase());
-  if (existing) {
-    return res.status(400).json({
-      status: "error",
-      success: false,
-      error: "A FAQ with this question already exists"
-    });
-  }
-  const newFaq = {
-    id: `faq-${Date.now()}`,
-    question: question.trim(),
-    answer: answer.trim()
-  };
-  db.addFaq(newFaq);
-  res.status(201).json({
-    status: "success",
-    success: true,
-    message: "FAQ added successfully",
-    data: newFaq
-  });
-});
-apiRouter.put("/admin/faqs/:id", authenticateJWT, (req, res) => {
-  const index = db.faqs.findIndex((f) => f.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "FAQ not found" });
-  }
-  const { question, answer } = req.body;
-  const existing = db.faqs[index];
-  const duplicate = db.faqs.find(
-    (f) => f.question.toLowerCase() === question?.trim().toLowerCase() && f.id !== req.params.id
-  );
-  if (duplicate) {
-    return res.status(400).json({
-      status: "error",
-      success: false,
-      error: "A FAQ with this question already exists"
-    });
-  }
-  const updated = {
-    id: existing.id,
-    question: question !== void 0 ? question.trim() : existing.question,
-    answer: answer !== void 0 ? answer.trim() : existing.answer
-  };
-  db.updateFaq(index, updated);
-  res.json({
-    status: "success",
-    success: true,
-    message: "FAQ updated successfully",
-    data: updated
-  });
-});
-apiRouter.delete("/admin/faqs/:id", authenticateJWT, (req, res) => {
-  const index = db.faqs.findIndex((f) => f.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "FAQ not found" });
-  }
-  db.deleteFaq(index);
-  res.json({
-    status: "success",
-    success: true,
-    message: "FAQ deleted successfully"
-  });
-});
-apiRouter.get("/admin/price-logs", authenticateJWT, (req, res) => {
-  const sortedLogs = [...db.priceLogs].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
-  const logsWithDetails = sortedLogs.map((log) => {
-    const pkg = db.packages.find((p) => p.id === log.packageId);
-    return {
-      ...log,
-      packageTitle: pkg ? pkg.titleEn : "Unknown Package",
-      packageCategory: pkg ? pkg.category : "Unknown",
-      packageIsActive: pkg ? pkg.isActive : false
-    };
-  });
-  res.json({
-    status: "success",
-    success: true,
-    count: logsWithDetails.length,
-    data: logsWithDetails
-  });
-});
-apiRouter.post("/admin/price-logs", authenticateJWT, (req, res) => {
-  const { packageId, priceUsd, priceEtb, priceSar, previousPriceUsd, previousPriceEtb, previousPriceSar, reason, updatedBy } = req.body;
-  if (!packageId) {
-    return res.status(400).json({ status: "error", success: false, error: "Package ID is required" });
-  }
-  const log = {
-    id: `pl-${Date.now()}`,
-    packageId,
-    priceUsd,
-    priceEtb,
-    priceSar,
-    previousPriceUsd,
-    previousPriceEtb,
-    previousPriceSar,
-    reason: reason || "Manual price update",
-    updatedBy: updatedBy || "Admin",
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  db.addPriceLog(log);
-  res.status(201).json({
-    status: "success",
-    success: true,
-    message: "Price log created successfully",
-    data: log
-  });
-});
-apiRouter.get("/packages", async (req, res) => {
-  try {
-    const rateData = await getExchangeRate();
-    const rate = rateData.rate;
-    const packagesList = db.packages.filter((p) => p.isActive === true);
-    const data = packagesList.map((pkg) => ({
-      id: String(pkg.id),
-      titleEn: pkg.titleEn,
-      titleAr: pkg.titleAr,
-      titleAm: pkg.titleAm || "",
-      category: pkg.category,
-      priceUsd: pkg.priceUsd,
-      priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
-      priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
-      priceType: pkg.priceType || "single",
-      priceUsdMin: pkg.priceUsdMin || null,
-      priceUsdMax: pkg.priceUsdMax || null,
-      priceEtbMin: pkg.priceEtbMin || null,
-      priceEtbMax: pkg.priceEtbMax || null,
-      priceSarMin: pkg.priceSarMin || null,
-      priceSarMax: pkg.priceSarMax || null,
-      discounts: pkg.discounts || [],
-      // <-- This includes discountType
-      persons: pkg.persons || [],
-      durationDays: pkg.durationDays,
-      departureCity: pkg.departureCity || "Addis Ababa",
-      inclusions: pkg.inclusions || [],
-      availableDates: pkg.availableDates || [],
-      itinerary: pkg.itinerary || [],
-      imageUrl: pkg.imageUrl,
-      isActive: pkg.isActive,
-      whatsappClicks: pkg.whatsappClicks || 0,
-      createdAt: pkg.createdAt,
-      updatedAt: pkg.updatedAt
-    }));
-    res.json({
-      status: "success",
-      success: true,
-      count: data.length,
-      data
-    });
-  } catch (err) {
-    console.error("\u274C Error fetching packages:", err);
-    res.status(500).json({ status: "error", success: false, error: err.message });
-  }
-});
-apiRouter.get("/packages/:id", async (req, res) => {
-  try {
-    const pkg = db.packages.find((p) => String(p.id) === String(req.params.id));
-    if (!pkg || pkg.isActive === false) {
-      return res.status(404).json({ status: "error", success: false, error: "Package not found" });
-    }
-    const rateData = await getExchangeRate();
-    const rate = rateData.rate;
-    const data = {
-      id: String(pkg.id),
-      titleEn: pkg.titleEn,
-      titleAr: pkg.titleAr,
-      titleAm: pkg.titleAm || "",
-      category: pkg.category,
-      priceUsd: pkg.priceUsd,
-      priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
-      priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
-      priceType: pkg.priceType || "single",
-      priceUsdMin: pkg.priceUsdMin || null,
-      priceUsdMax: pkg.priceUsdMax || null,
-      priceEtbMin: pkg.priceEtbMin || null,
-      priceEtbMax: pkg.priceEtbMax || null,
-      priceSarMin: pkg.priceSarMin || null,
-      priceSarMax: pkg.priceSarMax || null,
-      discounts: pkg.discounts || [],
-      durationDays: pkg.durationDays,
-      departureCity: pkg.departureCity || "Addis Ababa",
-      inclusions: pkg.inclusions || [],
-      availableDates: pkg.availableDates || [],
-      itinerary: pkg.itinerary || [],
-      imageUrl: pkg.imageUrl,
-      isActive: pkg.isActive,
-      whatsappClicks: pkg.whatsappClicks || 0,
-      createdAt: pkg.createdAt,
-      updatedAt: pkg.updatedAt
-    };
-    res.json({
-      status: "success",
-      success: true,
-      data
-    });
-  } catch (err) {
-    console.error("\u274C Error fetching package:", err);
-    res.status(500).json({ status: "error", success: false, error: err.message });
-  }
-});
-apiRouter.post("/packages/:id/click-whatsapp", async (req, res) => {
-  try {
-    const index = db.packages.findIndex((p) => String(p.id) === String(req.params.id));
-    if (index === -1) {
-      return res.status(404).json({ status: "error", success: false, error: "Package not found" });
-    }
-    const pkg = db.packages[index];
-    const updatedPkg = {
-      ...pkg,
-      whatsappClicks: (pkg.whatsappClicks || 0) + 1,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    db.updatePackage(index, updatedPkg);
-    res.json({
-      status: "success",
-      success: true,
-      message: "WhatsApp click tracked",
-      data: { whatsappClicks: updatedPkg.whatsappClicks }
-    });
-  } catch (err) {
-    console.error("\u274C Error tracking WhatsApp click:", err);
-    res.status(500).json({ status: "error", success: false, error: err.message });
-  }
-});
-apiRouter.get("/admin/packages", authenticateJWT, async (req, res) => {
-  try {
-    const rateData = await getExchangeRate();
-    const rate = rateData.rate;
-    const packagesList = db.packages;
-    const data = packagesList.map((pkg) => ({
-      id: String(pkg.id),
-      titleEn: pkg.titleEn,
-      titleAr: pkg.titleAr,
-      titleAm: pkg.titleAm || "",
-      category: pkg.category,
-      priceUsd: pkg.priceUsd,
-      priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
-      priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
-      priceType: pkg.priceType || "single",
-      priceUsdMin: pkg.priceUsdMin || null,
-      priceUsdMax: pkg.priceUsdMax || null,
-      priceEtbMin: pkg.priceEtbMin || null,
-      priceEtbMax: pkg.priceEtbMax || null,
-      priceSarMin: pkg.priceSarMin || null,
-      priceSarMax: pkg.priceSarMax || null,
-      discounts: pkg.discounts || [],
-      persons: pkg.persons || [],
-      // ✅ IMPORTANT: Include persons
-      durationDays: pkg.durationDays,
-      departureCity: pkg.departureCity || "Addis Ababa",
-      inclusions: pkg.inclusions || [],
-      availableDates: pkg.availableDates || [],
-      itinerary: pkg.itinerary || [],
-      imageUrl: pkg.imageUrl,
-      isActive: pkg.isActive,
-      whatsappClicks: pkg.whatsappClicks || 0,
-      createdAt: pkg.createdAt,
-      updatedAt: pkg.updatedAt
-    }));
-    res.json({
-      status: "success",
-      success: true,
-      count: data.length,
-      data
-    });
-  } catch (err) {
-    console.error("\u274C Error fetching admin packages:", err);
-    res.status(500).json({ status: "error", success: false, error: err.message });
-  }
-});
-apiRouter.get("/admin/packages/:id", authenticateJWT, async (req, res) => {
-  try {
-    const pkg = db.packages.find((p) => String(p.id) === String(req.params.id));
-    if (!pkg) {
-      return res.status(404).json({ status: "error", success: false, error: "Package not found" });
-    }
-    const rateData = await getExchangeRate();
-    const rate = rateData.rate;
-    const data = {
-      id: String(pkg.id),
-      titleEn: pkg.titleEn,
-      titleAr: pkg.titleAr,
-      titleAm: pkg.titleAm || "",
-      category: pkg.category,
-      priceUsd: pkg.priceUsd,
-      priceEtb: pkg.priceEtb || Math.round(pkg.priceUsd * rate),
-      priceSar: pkg.priceSar || Math.round(pkg.priceUsd * 3.75),
-      priceType: pkg.priceType || "single",
-      priceUsdMin: pkg.priceUsdMin || null,
-      priceUsdMax: pkg.priceUsdMax || null,
-      priceEtbMin: pkg.priceEtbMin || null,
-      priceEtbMax: pkg.priceEtbMax || null,
-      priceSarMin: pkg.priceSarMin || null,
-      priceSarMax: pkg.priceSarMax || null,
-      discounts: pkg.discounts || [],
-      durationDays: pkg.durationDays,
-      departureCity: pkg.departureCity || "Addis Ababa",
-      inclusions: pkg.inclusions || [],
-      availableDates: pkg.availableDates || [],
-      itinerary: pkg.itinerary || [],
-      imageUrl: pkg.imageUrl,
-      isActive: pkg.isActive,
-      whatsappClicks: pkg.whatsappClicks || 0,
-      createdAt: pkg.createdAt,
-      updatedAt: pkg.updatedAt
-    };
-    res.json({
-      status: "success",
-      success: true,
-      data
-    });
-  } catch (err) {
-    console.error("\u274C Error fetching package:", err);
-    res.status(500).json({ status: "error", success: false, error: err.message });
-  }
-});
-apiRouter.post("/admin/packages", authenticateJWT, (req, res) => {
-  packageUploadMiddleware(req, res, async (err) => {
-    if (err) {
-      console.error("\u274C Multer error:", err);
-      return res.status(400).json({ status: "error", success: false, error: err.message || "File upload failed" });
-    }
-    try {
-      const {
-        titleEn,
-        titleAr,
-        titleAm,
-        category,
-        priceUsd,
-        priceEtb,
-        priceSar,
-        priceType,
-        priceUsdMin,
-        priceUsdMax,
-        priceEtbMin,
-        priceEtbMax,
-        priceSarMin,
-        priceSarMax,
-        discounts,
-        persons,
-        durationDays,
-        departureCity,
-        inclusions,
-        availableDates,
-        itinerary,
-        isActive
-      } = req.body;
-      const parsedInclusions = typeof inclusions === "string" ? JSON.parse(inclusions) : inclusions || [];
-      const parsedAvailableDates = typeof availableDates === "string" ? JSON.parse(availableDates) : availableDates || [];
-      const parsedItinerary = typeof itinerary === "string" ? JSON.parse(itinerary) : itinerary || [];
-      const parsedDiscounts = typeof discounts === "string" ? JSON.parse(discounts) : discounts || [];
-      const parsedPersons = typeof persons === "string" ? JSON.parse(persons) : persons || [];
-      const file = req.file;
-      let imageUrl = "";
-      if (file) {
-        imageUrl = `/uploads/packages/${file.filename}`;
-        console.log(`\u{1F4E6} Package image uploaded: ${file.filename} -> ${imageUrl}`);
-      } else if (req.body.imageUrl) {
-        imageUrl = req.body.imageUrl;
-      }
-      if (!titleEn || !titleEn.trim()) {
-        return res.status(400).json({ status: "error", success: false, error: "English Title is required." });
-      }
-      if (!category) {
-        return res.status(400).json({ status: "error", success: false, error: "Category is required." });
-      }
-      if (!priceUsd || Number(priceUsd) <= 0) {
-        return res.status(400).json({ status: "error", success: false, error: "Valid USD price is required." });
-      }
-      if (!durationDays || Number(durationDays) <= 0) {
-        return res.status(400).json({ status: "error", success: false, error: "Duration must be at least 1 day." });
-      }
-      if (!imageUrl) {
-        return res.status(400).json({ status: "error", success: false, error: "Image is required." });
-      }
-      const validCategories = ["Economy", "Standard", "Premium", "VIP"];
-      if (!validCategories.includes(category)) {
-        return res.status(400).json({
-          status: "error",
-          success: false,
-          error: `Invalid category. Must be one of: ${validCategories.join(", ")}`
-        });
-      }
-      const validPriceTypes = ["single", "range"];
-      const finalPriceType = priceType && validPriceTypes.includes(priceType) ? priceType : "single";
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      const priceUsdNum = Number(priceUsd);
-      const rate = 159.98;
-      const newPkg = {
-        id: `pkg-${Date.now()}`,
-        titleEn: titleEn.trim(),
-        titleAr: (titleAr || "").trim(),
-        titleAm: (titleAm || "").trim(),
-        category,
-        priceUsd: priceUsdNum,
-        priceEtb: priceEtb ? Number(priceEtb) : Math.round(priceUsdNum * rate),
-        priceSar: priceSar ? Number(priceSar) : Math.round(priceUsdNum * 3.75),
-        priceType: finalPriceType,
-        durationDays: Number(durationDays),
-        departureCity: departureCity || "Addis Ababa",
-        inclusions: Array.isArray(parsedInclusions) ? parsedInclusions : [],
-        availableDates: Array.isArray(parsedAvailableDates) ? parsedAvailableDates : [],
-        itinerary: Array.isArray(parsedItinerary) ? parsedItinerary : [],
-        imageUrl: imageUrl.trim(),
-        isActive: isActive !== void 0 ? Boolean(isActive) : true,
-        status: isActive !== void 0 ? Boolean(isActive) ? "Active" : "Inactive" : "Active",
-        whatsappClicks: 0,
-        createdAt: now,
-        updatedAt: now,
-        discounts: [],
-        persons: []
-      };
-      if (finalPriceType === "range") {
-        newPkg.priceUsdMin = priceUsdMin ? Number(priceUsdMin) : priceUsdNum;
-        newPkg.priceUsdMax = priceUsdMax ? Number(priceUsdMax) : priceUsdNum;
-        newPkg.priceEtbMin = priceEtbMin ? Number(priceEtbMin) : Math.round(priceUsdNum * rate);
-        newPkg.priceEtbMax = priceEtbMax ? Number(priceEtbMax) : Math.round(priceUsdNum * rate);
-        newPkg.priceSarMin = priceSarMin ? Number(priceSarMin) : Math.round(priceUsdNum * 3.75);
-        newPkg.priceSarMax = priceSarMax ? Number(priceSarMax) : Math.round(priceUsdNum * 3.75);
-      }
-      if (Array.isArray(parsedDiscounts) && parsedDiscounts.length > 0) {
-        newPkg.discounts = parsedDiscounts.map((d) => ({
-          ...d,
-          id: d.id || `disc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          isActive: d.isActive !== void 0 ? d.isActive : true
-        }));
-      }
-      if (Array.isArray(parsedPersons) && parsedPersons.length > 0) {
-        newPkg.persons = parsedPersons.map((p) => ({
-          id: p.id || `person-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          name: p.name || "",
-          email: p.email || "",
-          phone: p.phone || "",
-          age: p.age || void 0,
-          gender: p.gender || void 0
-        }));
-      }
-      db.addPackage(newPkg);
-      const log = {
-        id: `pl-${Date.now()}`,
-        packageId: newPkg.id,
-        priceUsd: newPkg.priceUsd,
-        priceEtb: newPkg.priceEtb,
-        priceSar: newPkg.priceSar,
-        previousPriceUsd: null,
-        previousPriceEtb: null,
-        previousPriceSar: null,
-        reason: "Initial package creation",
-        updatedBy: "Admin",
-        updatedAt: now
-      };
-      db.addPriceLog(log);
-      res.status(201).json({
-        status: "success",
-        success: true,
-        message: "Package created successfully",
-        data: newPkg
-      });
-    } catch (err2) {
-      console.error("\u274C Error creating package:", err2);
-      res.status(500).json({
-        status: "error",
-        success: false,
-        error: "Something went wrong while creating the package.",
-        details: err2.message
-      });
-    }
-  });
-});
-apiRouter.put("/admin/packages/:id", authenticateJWT, (req, res) => {
-  packageUploadMiddleware(req, res, async (err) => {
-    if (err) {
-      console.error("\u274C Multer error on update:", err);
-      return res.status(400).json({ status: "error", success: false, error: err.message || "File upload failed" });
-    }
-    try {
-      const index = db.packages.findIndex((p) => String(p.id) === String(req.params.id));
-      if (index === -1) {
-        return res.status(404).json({ status: "error", success: false, error: "Package not found" });
-      }
-      const existing = db.packages[index];
-      const {
-        titleEn,
-        titleAr,
-        titleAm,
-        category,
-        priceUsd,
-        priceEtb,
-        priceSar,
-        priceType,
-        priceUsdMin,
-        priceUsdMax,
-        priceEtbMin,
-        priceEtbMax,
-        priceSarMin,
-        priceSarMax,
-        discounts,
-        persons,
-        durationDays,
-        departureCity,
-        inclusions,
-        availableDates,
-        itinerary,
-        isActive,
-        reason
-      } = req.body;
-      const file = req.file;
-      let imageUrl = existing.imageUrl;
-      if (file) {
-        imageUrl = `/uploads/packages/${file.filename}`;
-        console.log(`\u{1F4E6} Package image updated: ${file.filename} -> ${imageUrl}`);
-      } else if (req.body.imageUrl) {
-        imageUrl = req.body.imageUrl;
-      }
-      if (category && !["Economy", "Standard", "Premium", "VIP"].includes(category)) {
-        return res.status(400).json({
-          status: "error",
-          success: false,
-          error: "Invalid category. Must be Economy, Standard, Premium, or VIP."
-        });
-      }
-      const validPriceTypes = ["single", "range"];
-      const finalPriceType = priceType && validPriceTypes.includes(priceType) ? priceType : existing.priceType || "single";
-      const parsedInclusions = typeof inclusions === "string" ? JSON.parse(inclusions) : inclusions !== void 0 ? inclusions : existing.inclusions;
-      const parsedAvailableDates = typeof availableDates === "string" ? JSON.parse(availableDates) : availableDates !== void 0 ? availableDates : existing.availableDates;
-      const parsedItinerary = typeof itinerary === "string" ? JSON.parse(itinerary) : itinerary !== void 0 ? itinerary : existing.itinerary;
-      const parsedDiscounts = typeof discounts === "string" ? JSON.parse(discounts) : discounts !== void 0 ? discounts : existing.discounts || [];
-      const parsedPersons = typeof persons === "string" ? JSON.parse(persons) : persons !== void 0 ? persons : existing.persons || [];
-      const rate = 159.98;
-      const priceUsdNew = priceUsd !== void 0 ? Number(priceUsd) : existing.priceUsd;
-      const priceEtbNew = priceEtb !== void 0 ? Number(priceEtb) : existing.priceEtb || Math.round(priceUsdNew * rate);
-      const priceSarNew = priceSar !== void 0 ? Number(priceSar) : existing.priceSar || Math.round(priceUsdNew * 3.75);
-      const updatedPkg = {
-        ...existing,
-        titleEn: titleEn !== void 0 ? titleEn.trim() : existing.titleEn,
-        titleAr: titleAr !== void 0 ? titleAr.trim() : existing.titleAr,
-        titleAm: titleAm !== void 0 ? titleAm.trim() : existing.titleAm,
-        category: category ? category : existing.category,
-        priceUsd: priceUsdNew,
-        priceEtb: priceEtbNew,
-        priceSar: priceSarNew,
-        priceType: finalPriceType,
-        durationDays: durationDays !== void 0 ? Number(durationDays) : existing.durationDays,
-        departureCity: departureCity !== void 0 ? departureCity : existing.departureCity,
-        inclusions: Array.isArray(parsedInclusions) ? parsedInclusions : [],
-        availableDates: Array.isArray(parsedAvailableDates) ? parsedAvailableDates : [],
-        itinerary: Array.isArray(parsedItinerary) ? parsedItinerary : [],
-        imageUrl,
-        isActive: isActive !== void 0 ? Boolean(isActive) : existing.isActive,
-        status: isActive !== void 0 ? Boolean(isActive) ? "Active" : "Inactive" : existing.status,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        discounts: Array.isArray(parsedDiscounts) ? parsedDiscounts : existing.discounts || [],
-        persons: Array.isArray(parsedPersons) ? parsedPersons : existing.persons || []
-      };
-      if (finalPriceType === "range") {
-        if (existing.priceType !== "range") {
-          updatedPkg.priceUsdMin = priceUsdMin !== void 0 ? Number(priceUsdMin) : existing.priceUsd;
-          updatedPkg.priceUsdMax = priceUsdMax !== void 0 ? Number(priceUsdMax) : existing.priceUsd;
-          updatedPkg.priceEtbMin = priceEtbMin !== void 0 ? Number(priceEtbMin) : existing.priceEtb || Math.round(existing.priceUsd * rate);
-          updatedPkg.priceEtbMax = priceEtbMax !== void 0 ? Number(priceEtbMax) : existing.priceEtb || Math.round(existing.priceUsd * rate);
-          updatedPkg.priceSarMin = priceSarMin !== void 0 ? Number(priceSarMin) : existing.priceSar || Math.round(existing.priceUsd * 3.75);
-          updatedPkg.priceSarMax = priceSarMax !== void 0 ? Number(priceSarMax) : existing.priceSar || Math.round(existing.priceUsd * 3.75);
-        } else {
-          updatedPkg.priceUsdMin = priceUsdMin !== void 0 ? Number(priceUsdMin) : existing.priceUsdMin || existing.priceUsd;
-          updatedPkg.priceUsdMax = priceUsdMax !== void 0 ? Number(priceUsdMax) : existing.priceUsdMax || existing.priceUsd;
-          updatedPkg.priceEtbMin = priceEtbMin !== void 0 ? Number(priceEtbMin) : existing.priceEtbMin || Math.round(existing.priceUsd * rate);
-          updatedPkg.priceEtbMax = priceEtbMax !== void 0 ? Number(priceEtbMax) : existing.priceEtbMax || Math.round(existing.priceUsd * rate);
-          updatedPkg.priceSarMin = priceSarMin !== void 0 ? Number(priceSarMin) : existing.priceSarMin || Math.round(existing.priceUsd * 3.75);
-          updatedPkg.priceSarMax = priceSarMax !== void 0 ? Number(priceSarMax) : existing.priceSarMax || Math.round(existing.priceUsd * 3.75);
-        }
-      } else {
-        delete updatedPkg.priceUsdMin;
-        delete updatedPkg.priceUsdMax;
-        delete updatedPkg.priceEtbMin;
-        delete updatedPkg.priceEtbMax;
-        delete updatedPkg.priceSarMin;
-        delete updatedPkg.priceSarMax;
-      }
-      const priceChanged = priceUsdNew !== existing.priceUsd || priceEtbNew !== existing.priceEtb || priceSarNew !== existing.priceSar;
-      const updateReason = reason || (priceChanged ? "Price updated via admin" : "Package details updated");
-      db.updatePackage(index, updatedPkg, updateReason);
-      console.log(`\u2705 Package ${existing.id} updated successfully`);
-      res.json({
-        status: "success",
-        success: true,
-        message: "Package updated successfully",
-        data: updatedPkg
-      });
-    } catch (err2) {
-      console.error("\u274C Error updating package:", err2);
-      res.status(500).json({
-        status: "error",
-        success: false,
-        error: "Something went wrong while updating the package.",
-        details: err2.message
-      });
-    }
-  });
-});
-apiRouter.delete("/admin/packages/:id", authenticateJWT, (req, res) => {
-  const index = db.packages.findIndex((p) => String(p.id) === String(req.params.id));
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Package not found" });
-  }
-  const pkg = db.packages[index];
-  db.deletePackage(index);
-  console.log(`\u{1F5D1}\uFE0F Package ${pkg.id} (${pkg.titleEn}) deleted`);
-  res.json({
-    status: "success",
-    success: true,
-    message: "Package deleted successfully"
-  });
-});
-apiRouter.get("/admin/price-logs", authenticateJWT, (req, res) => {
-  const sortedLogs = [...db.priceLogs].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
-  const logsWithDetails = sortedLogs.map((log) => {
-    const pkg = db.packages.find((p) => p.id === log.packageId);
-    return {
-      ...log,
-      packageTitle: pkg ? pkg.titleEn : log.packageTitle || "Unknown Package",
-      packageCategory: pkg ? pkg.category : "Unknown",
-      packageIsActive: pkg ? pkg.isActive : false
-    };
-  });
-  res.json({
-    status: "success",
-    success: true,
-    count: logsWithDetails.length,
-    data: logsWithDetails
-  });
-});
-function extractYouTubeVideoId(url) {
-  if (!url) return null;
-  if (url.includes("youtu.be/")) {
-    return url.split("youtu.be/")[1]?.split("?")[0] || null;
-  }
-  if (url.includes("watch?v=")) {
-    return url.split("watch?v=")[1]?.split("&")[0] || null;
-  }
-  if (url.includes("youtube.com/embed/")) {
-    return url.split("youtube.com/embed/")[1]?.split("?")[0] || null;
-  }
-  if (url.includes("youtube.com/v/")) {
-    return url.split("youtube.com/v/")[1]?.split("?")[0] || null;
-  }
-  if (url.includes("youtube.com/shorts/")) {
-    return url.split("youtube.com/shorts/")[1]?.split("?")[0] || null;
-  }
-  return null;
 }
-apiRouter.get("/gallery", (req, res) => {
-  let items = db.gallery.filter((g) => g.isActive !== false);
-  const typeFilter = req.query.type ? String(req.query.type).toLowerCase() : null;
-  if (typeFilter === "photo" || typeFilter === "video") {
-    items = items.filter((g) => g.type === typeFilter);
-  }
-  const sorted = [...items].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-  const formattedItems = sorted.map((item) => {
-    let thumbnailUrl = item.thumbnailUrl || "";
-    let imageUrl = item.imageUrl || "";
-    if (item.type === "video") {
-      if (!thumbnailUrl && imageUrl) {
-        thumbnailUrl = imageUrl;
-      }
-      if (!thumbnailUrl) {
-        thumbnailUrl = "";
-      }
+apiRouter.post(["/login", "/admin/login", "/auth/login", "/admin/auth/login"], login);
+apiRouter.get(
+  ["/admin/me", "/admin/auth/me"],
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const user = req.user && await dbOperations.findAdminUserById(req.user.id);
+    if (!user) return fail(res, "User not found", 404);
+    return send(res, {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      status: user.status
+    });
+  })
+);
+apiRouter.get(
+  "/admin/users",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllAdminUsers()))
+);
+apiRouter.post(
+  "/admin/users",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    if (!req.body.username || !req.body.email || !req.body.password) {
+      return fail(res, "Username, email and password are required", 400);
     }
-    return {
+    const passwordHash = await import_bcryptjs2.default.hash(req.body.password, 10);
+    return send(res, await dbOperations.createAdminUser({ ...req.body, passwordHash }), 201);
+  })
+);
+apiRouter.put(
+  "/admin/users/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const data = { ...req.body };
+    if (data.password) {
+      data.passwordHash = await import_bcryptjs2.default.hash(data.password, 10);
+      delete data.password;
+    }
+    const item = await dbOperations.updateAdminUser(req.params.id, data);
+    if (!item) return fail(res, "Admin user not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/users/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteAdminUser(req.params.id);
+    if (!item) return fail(res, "Admin user not found", 404);
+    return send(res, { message: "Admin user deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/exchange-rate",
+  asyncRoute(async (_req, res) => send(res, await getExchangeRate()))
+);
+apiRouter.get(
+  "/admin/exchange-rate",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await getExchangeRate()))
+);
+apiRouter.post("/admin/exchange-rate", authenticateJWT, (req, res) => {
+  const rate = Number(req.body.rate);
+  if (!rate || rate <= 0) return fail(res, "Valid rate number is required", 400);
+  return send(res, setAdminOverrideRate(rate));
+});
+apiRouter.get(
+  "/social-links",
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getActiveSocialLinks()))
+);
+apiRouter.get(
+  "/admin/social-links",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllSocialLinks()))
+);
+apiRouter.post(
+  "/admin/social-links",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    if (!req.body.platform || !req.body.url) {
+      return fail(res, "Platform and URL are required", 400);
+    }
+    return send(
+      res,
+      await dbOperations.createSocialLink({
+        ...req.body,
+        platform: String(req.body.platform).toLowerCase(),
+        icon: req.body.icon || req.body.platform
+      }),
+      201
+    );
+  })
+);
+apiRouter.put(
+  "/admin/social-links/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateSocialLink(req.params.id, req.body);
+    if (!item) return fail(res, "Social Media link not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/social-links/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteSocialLink(req.params.id);
+    if (!item) return fail(res, "Social Media link not found", 404);
+    return send(res, { message: "Social Media link deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/faqs",
+  asyncRoute(async (_req, res) => {
+    const data = await dbOperations.getActiveFaqs();
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.get(
+  "/admin/faqs",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const data = await dbOperations.getAllFaqs();
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.post(
+  "/admin/faqs",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    if (!req.body.question || !req.body.answer) {
+      return fail(res, "Question and answer are required", 400);
+    }
+    return send(res, await dbOperations.createFaq(req.body), 201);
+  })
+);
+apiRouter.put(
+  "/admin/faqs/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateFaq(req.params.id, req.body);
+    if (!item) return fail(res, "FAQ not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/faqs/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteFaq(req.params.id);
+    if (!item) return fail(res, "FAQ not found", 404);
+    return send(res, { message: "FAQ deleted successfully" });
+  })
+);
+var packageInput = (body, file) => ({
+  titleEn: body.titleEn,
+  titleAr: body.titleAr || "",
+  titleAm: body.titleAm || "",
+  category: body.category,
+  priceUsd: Number(body.priceUsd),
+  priceEtb: body.priceEtb === void 0 || body.priceEtb === "" ? void 0 : Number(body.priceEtb),
+  priceSar: body.priceSar === void 0 || body.priceSar === "" ? void 0 : Number(body.priceSar),
+  priceType: body.priceType || "single",
+  priceUsdMin: body.priceUsdMin ? Number(body.priceUsdMin) : void 0,
+  priceUsdMax: body.priceUsdMax ? Number(body.priceUsdMax) : void 0,
+  priceEtbMin: body.priceEtbMin ? Number(body.priceEtbMin) : void 0,
+  priceEtbMax: body.priceEtbMax ? Number(body.priceEtbMax) : void 0,
+  priceSarMin: body.priceSarMin ? Number(body.priceSarMin) : void 0,
+  priceSarMax: body.priceSarMax ? Number(body.priceSarMax) : void 0,
+  durationDays: Number(body.durationDays),
+  departureCity: body.departureCity || "Addis Ababa",
+  inclusions: parse(body.inclusions),
+  availableDates: parse(body.availableDates),
+  itinerary: parse(body.itinerary),
+  discounts: parse(body.discounts),
+  persons: parse(body.persons),
+  imageUrl: file ? `/uploads/packages/${file.filename}` : body.imageUrl,
+  isActive: bool(body.isActive, true)
+});
+apiRouter.get(
+  "/packages",
+  asyncRoute(async (_req, res) => {
+    const rate = (await getExchangeRate()).rate;
+    const data = (await dbOperations.getActivePackages()).map((item) => ({
       ...item,
-      thumbnailUrl,
-      imageUrl
-    };
-  });
-  res.json({
-    status: "success",
-    success: true,
-    count: formattedItems.length,
-    data: formattedItems
-  });
-});
-apiRouter.get("/gallery/:id", (req, res) => {
-  const item = db.gallery.find((g) => String(g.id) === String(req.params.id));
-  if (!item || !item.isActive) {
-    return res.status(404).json({ status: "error", success: false, error: "Gallery item not found" });
-  }
-  res.json({ status: "success", success: true, data: item });
-});
-apiRouter.get("/admin/gallery", authenticateJWT, (req, res) => {
-  const typeFilter = req.query.type ? String(req.query.type).toLowerCase() : null;
-  let items = db.gallery;
-  if (typeFilter === "photo" || typeFilter === "video") {
-    items = items.filter((g) => g.type === typeFilter);
-  }
-  const sorted = [...items].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-  res.json({ status: "success", success: true, count: sorted.length, data: sorted });
-});
-apiRouter.post("/admin/gallery", authenticateJWT, galleryUploadFields, async (req, res) => {
-  try {
-    const body = req.body || {};
-    const type = body.type === "video" ? "video" : "photo";
-    const titleEn = body.titleEn || body.title_en || body.title;
-    const titleAr = body.titleAr || body.title_ar || "";
-    const duration = body.duration || "";
-    const location = body.location || "Makkah Al-Mukarramah";
-    const description = body.description || "";
-    const isActive = body.isActive !== void 0 ? String(body.isActive) === "true" || body.isActive === true : true;
-    const sortOrder = body.sortOrder !== void 0 ? Number(body.sortOrder) : body.sort_order !== void 0 ? Number(body.sort_order) : 0;
-    let imageUrl = body.imageUrl || body.image_url || "";
-    let videoUrl = body.videoUrl || body.video_url || "";
-    let thumbnailUrl = body.thumbnailUrl || "";
-    if (req.files) {
-      const files = req.files;
-      if (files.image && files.image[0]) {
-        const file = files.image[0];
-        imageUrl = `/uploads/images/${file.filename}`;
-        if (type === "photo") {
-          thumbnailUrl = imageUrl;
-        }
-        console.log(`\u{1F5BC}\uFE0F Image uploaded: ${file.filename} -> ${imageUrl}`);
-      }
-      if (files.video && files.video[0]) {
-        const file = files.video[0];
-        videoUrl = `/uploads/videos/${file.filename}`;
-        console.log(`\u{1F3AC} Video uploaded: ${file.filename} -> ${videoUrl}`);
-        const videoPath = import_path3.default.join(uploadPaths.videosPath, file.filename);
-        const thumbnailFilename = `thumb-${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`;
-        try {
-          await new Promise((resolve, reject) => {
-            (0, import_fluent_ffmpeg.default)(videoPath).screenshots({
-              timestamps: [1],
-              filename: thumbnailFilename,
-              folder: uploadPaths.imagesPath,
-              size: "320x180"
-            }).on("end", resolve).on("error", reject);
-          });
-          thumbnailUrl = `/uploads/images/${thumbnailFilename}`;
-          imageUrl = thumbnailUrl;
-          console.log(`\u{1F3AC} Thumbnail generated: ${thumbnailFilename}`);
-        } catch (ffmpegErr) {
-          console.error("\u274C Failed to generate video thumbnail:", ffmpegErr);
-          thumbnailUrl = "";
-        }
-      }
-    }
-    if (type === "video" && videoUrl) {
-      if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
-        const videoId = extractYouTubeVideoId(videoUrl);
-        if (videoId) {
-          thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-          imageUrl = thumbnailUrl;
-          console.log(`\u{1F3AC} YouTube thumbnail set: ${thumbnailUrl}`);
-        }
-      }
-    }
-    if (!titleEn) {
-      return res.status(400).json({ status: "error", success: false, error: "Title (English) is required." });
-    }
-    if (type === "photo" && !imageUrl) {
-      return res.status(400).json({ status: "error", success: false, error: "Image file is required for photo type." });
-    }
-    if (type === "video" && !videoUrl) {
-      return res.status(400).json({ status: "error", success: false, error: "Video file or URL is required for video type." });
-    }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const newItem = {
-      id: `gal-${Date.now()}-${Math.floor(Math.random() * 1e3)}`,
-      type,
-      titleEn,
-      titleAr,
-      imageUrl: imageUrl || "",
-      thumbnailUrl: thumbnailUrl || imageUrl || "",
-      videoUrl: videoUrl || "",
-      duration,
-      location,
-      description,
-      isActive,
-      sortOrder,
-      uploadDate: now.substring(0, 10),
-      createdAt: now,
-      updatedAt: now
-    };
-    db.addGalleryItem(newItem);
-    res.status(201).json({
-      status: "success",
-      success: true,
-      message: "Gallery item created successfully",
-      data: newItem
-    });
-  } catch (err) {
-    console.error("Error creating gallery item:", err);
-    res.status(500).json({ status: "error", success: false, error: "Failed to create gallery item." });
-  }
-});
-apiRouter.post("/admin/gallery/bulk", authenticateJWT, bulkUpload, async (req, res) => {
-  try {
-    const files = req.files;
-    const body = req.body || {};
-    let items = [];
-    try {
-      if (body.items) {
-        items = typeof body.items === "string" ? JSON.parse(body.items) : body.items;
-      }
-    } catch (e) {
-      console.error("Failed to parse items:", e);
-      return res.status(400).json({ status: "error", success: false, error: "Invalid items data" });
-    }
-    if (files && files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const itemData = items[i] || {};
-        const isVideo = file.mimetype.startsWith("video/");
-        const type = isVideo ? "video" : "photo";
-        let imageUrl = "";
-        let videoUrl = "";
-        let thumbnailUrl = "";
-        if (isVideo) {
-          videoUrl = `/uploads/videos/${file.filename}`;
-          const videoPath = import_path3.default.join(uploadPaths.videosPath, file.filename);
-          const thumbnailFilename = `thumb-${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`;
-          try {
-            await new Promise((resolve, reject) => {
-              (0, import_fluent_ffmpeg.default)(videoPath).screenshots({
-                timestamps: [1],
-                filename: thumbnailFilename,
-                folder: uploadPaths.imagesPath,
-                size: "320x180"
-              }).on("end", resolve).on("error", reject);
-            });
-            thumbnailUrl = `/uploads/images/${thumbnailFilename}`;
-            imageUrl = thumbnailUrl;
-            console.log(`\u{1F3AC} Thumbnail generated for bulk upload: ${thumbnailFilename}`);
-          } catch (ffmpegErr) {
-            console.error("\u274C Failed to generate video thumbnail:", ffmpegErr);
-            thumbnailUrl = "";
-          }
-        } else {
-          imageUrl = `/uploads/images/${file.filename}`;
-          thumbnailUrl = imageUrl;
-        }
-        const isYouTube = itemData.videoUrl && (itemData.videoUrl.includes("youtube.com") || itemData.videoUrl.includes("youtu.be"));
-        if (isYouTube) {
-          const videoId = extractYouTubeVideoId(itemData.videoUrl);
-          if (videoId) {
-            thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-            imageUrl = thumbnailUrl;
-          }
-        }
-        const now = (/* @__PURE__ */ new Date()).toISOString();
-        const newItem = {
-          id: `gal-${Date.now()}-${Math.floor(Math.random() * 1e3)}-${i}`,
-          type,
-          titleEn: itemData.titleEn || file.originalname || `Untitled ${type}`,
-          titleAr: itemData.titleAr || "",
-          imageUrl: imageUrl || "",
-          thumbnailUrl: thumbnailUrl || imageUrl || "",
-          videoUrl: isVideo ? videoUrl : itemData.videoUrl || "",
-          duration: itemData.duration || "",
-          location: itemData.location || "Makkah Al-Mukarramah",
-          description: itemData.description || "",
-          isActive: itemData.isActive !== void 0 ? itemData.isActive : true,
-          sortOrder: itemData.sortOrder || 0,
-          uploadDate: now.substring(0, 10),
-          createdAt: now,
-          updatedAt: now
-        };
-        db.addGalleryItem(newItem);
-        items[i] = newItem;
-      }
-      res.status(201).json({
-        status: "success",
-        success: true,
-        message: `Successfully uploaded ${files.length} items`,
-        data: items
-      });
-    } else {
-      const createdItems = [];
-      for (const itemData of items) {
-        const isYouTube = itemData.videoUrl && (itemData.videoUrl.includes("youtube.com") || itemData.videoUrl.includes("youtu.be"));
-        let thumbnailUrl = "";
-        let imageUrl = "";
-        if (isYouTube) {
-          const videoId = extractYouTubeVideoId(itemData.videoUrl);
-          if (videoId) {
-            thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-            imageUrl = thumbnailUrl;
-          }
-        }
-        const now = (/* @__PURE__ */ new Date()).toISOString();
-        const newItem = {
-          id: `gal-${Date.now()}-${Math.floor(Math.random() * 1e3)}`,
-          type: itemData.type || "video",
-          titleEn: itemData.titleEn || "Untitled",
-          titleAr: itemData.titleAr || "",
-          imageUrl: imageUrl || itemData.imageUrl || "",
-          thumbnailUrl: thumbnailUrl || itemData.thumbnailUrl || imageUrl || "",
-          videoUrl: itemData.videoUrl || "",
-          duration: itemData.duration || "",
-          location: itemData.location || "Makkah Al-Mukarramah",
-          description: itemData.description || "",
-          isActive: itemData.isActive !== void 0 ? itemData.isActive : true,
-          sortOrder: itemData.sortOrder || 0,
-          uploadDate: now.substring(0, 10),
-          createdAt: now,
-          updatedAt: now
-        };
-        db.addGalleryItem(newItem);
-        createdItems.push(newItem);
-      }
-      res.status(201).json({
-        status: "success",
-        success: true,
-        message: `Successfully created ${createdItems.length} items`,
-        data: createdItems
-      });
-    }
-  } catch (err) {
-    console.error("Error in bulk upload:", err);
-    res.status(500).json({ status: "error", success: false, error: "Failed to bulk upload gallery items." });
-  }
-});
-apiRouter.delete("/admin/gallery/:id", authenticateJWT, (req, res) => {
-  const index = db.gallery.findIndex((g) => String(g.id) === String(req.params.id));
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Gallery item not found" });
-  }
-  db.deleteGalleryItem(index);
-  res.json({ status: "success", success: true, message: "Gallery item deleted successfully" });
-});
-apiRouter.delete("/admin/gallery/:id", authenticateJWT, (req, res) => {
-  const index = db.gallery.findIndex((g) => String(g.id) === String(req.params.id));
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Gallery item not found" });
-  }
-  db.deleteGalleryItem(index);
-  res.json({ status: "success", success: true, message: "Gallery item deleted successfully" });
-});
-apiRouter.get("/admin/inquiries", authenticateJWT, (req, res) => {
-  try {
-    const sorted = [...db.inquiries].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    res.json({
-      status: "success",
-      success: true,
-      count: sorted.length,
-      data: sorted
-    });
-  } catch (error) {
-    console.error("\u274C Error fetching inquiries:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to fetch inquiries" });
-  }
-});
-apiRouter.post("/inquiries", (req, res) => {
-  try {
-    const { fullName, phone, email, subject, message, source } = req.body;
-    if (!fullName || !phone || !message) {
-      return res.status(400).json({ status: "error", success: false, error: "Missing required fields" });
-    }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const newInquiry = {
-      id: `inq-${Date.now()}`,
-      fullName,
-      phone,
-      email: email || "",
-      subject: subject || "Umrah Tour Inquiry",
-      message,
-      source: source || "Contact Form",
-      status: "New",
-      dateReceived: now,
-      createdAt: now,
-      updatedAt: now
-    };
-    db.inquiries.unshift(newInquiry);
-    db.saveToFile();
-    res.status(201).json({ status: "success", success: true, message: "Inquiry submitted", data: newInquiry });
-  } catch (error) {
-    console.error("\u274C Error creating inquiry:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to create inquiry" });
-  }
-});
-apiRouter.put("/admin/inquiries/bulk-status", authenticateJWT, (req, res) => {
-  console.log("\u{1F525} BULK STATUS ENDPOINT HIT!");
-  console.log("\u{1F4E5} Request body:", req.body);
-  try {
-    const { ids, status } = req.body;
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "No inquiry IDs provided"
-      });
-    }
-    const validStatuses = ["New", "Contacted", "Resolved"];
-    if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`
-      });
-    }
-    let updatedCount = 0;
-    const updatedInquiries = [];
-    for (const id of ids) {
-      const inquiry = db.inquiries.find((i) => String(i.id) === String(id));
-      if (inquiry) {
-        inquiry.status = status;
-        inquiry.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-        updatedCount++;
-        updatedInquiries.push(inquiry);
-      }
-    }
-    db.saveToFile();
-    console.log(`\u2705 Updated ${updatedCount} inquiries to ${status}`);
-    res.json({
-      status: "success",
-      success: true,
-      message: `Updated ${updatedCount} inquiries to ${status}`,
-      data: {
-        updatedCount,
-        updatedInquiries
-      }
-    });
-  } catch (error) {
-    console.error("\u274C Bulk status update error:", error);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to update inquiry statuses"
-    });
-  }
-});
-apiRouter.put("/admin/inquiries/:id", authenticateJWT, (req, res) => {
-  try {
-    const inquiry = db.inquiries.find((i) => String(i.id) === String(req.params.id));
-    if (!inquiry) {
-      return res.status(404).json({ status: "error", success: false, error: "Inquiry not found" });
-    }
-    const { status } = req.body;
-    const validStatuses = ["New", "Contacted", "Resolved"];
-    if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({ status: "error", success: false, error: "Invalid status" });
-    }
-    inquiry.status = status;
-    inquiry.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    db.saveToFile();
-    res.json({ status: "success", success: true, message: "Inquiry updated", data: inquiry });
-  } catch (error) {
-    console.error("\u274C Error updating inquiry:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to update inquiry" });
-  }
-});
-apiRouter.delete("/admin/inquiries/:id", authenticateJWT, (req, res) => {
-  try {
-    const index = db.inquiries.findIndex((i) => String(i.id) === String(req.params.id));
-    if (index === -1) {
-      return res.status(404).json({ status: "error", success: false, error: "Inquiry not found" });
-    }
-    db.deleteInquiry(index);
-    res.json({ status: "success", success: true, message: "Inquiry deleted" });
-  } catch (error) {
-    console.error("\u274C Error deleting inquiry:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to delete inquiry" });
-  }
-});
-apiRouter.delete("/admin/inquiries/bulk-delete", authenticateJWT, (req, res) => {
-  try {
-    const { ids } = req.body;
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ status: "error", success: false, error: "No inquiry IDs provided" });
-    }
-    let deletedCount = 0;
-    for (let i = db.inquiries.length - 1; i >= 0; i--) {
-      if (ids.includes(String(db.inquiries[i].id))) {
-        db.inquiries.splice(i, 1);
-        deletedCount++;
-      }
-    }
-    db.saveToFile();
-    res.json({ status: "success", success: true, message: `Deleted ${deletedCount} inquiries` });
-  } catch (error) {
-    console.error("\u274C Error bulk deleting inquiries:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to delete inquiries" });
-  }
-});
-apiRouter.post("/admin/sms/campaign", authenticateJWT, (req, res) => {
-  const { message, recipientFilter, channelFilter, packageInterestId, sendToAll, recipientType, packageId } = req.body;
-  if (!message) {
-    return res.status(400).json({ status: "error", success: false, error: "Message content is required" });
-  }
-  let recipients = [];
-  let recipientPhones = [];
-  let recipientTypeLabel = "";
-  const recType = recipientType || "subscribers";
-  if (recType === "persons") {
-    recipientTypeLabel = "Persons on Package";
-    if (packageId) {
-      const pkg = db.packages.find((p) => String(p.id) === String(packageId));
-      if (pkg && pkg.persons && Array.isArray(pkg.persons)) {
-        recipients = pkg.persons.map((p) => ({
-          phone: p.phone,
-          name: p.name || "",
-          email: p.email || "",
-          packageTitle: pkg.titleEn
-        }));
-        recipientPhones = recipients.map((r) => r.phone);
-        console.log(`\u{1F4F1} Found ${recipients.length} persons in package "${pkg.titleEn}"`);
-      }
-    } else {
-      db.packages.forEach((pkg) => {
-        if (pkg.persons && Array.isArray(pkg.persons)) {
-          pkg.persons.forEach((p) => {
-            if (p.phone) {
-              recipients.push({
-                phone: p.phone,
-                name: p.name || "",
-                email: p.email || "",
-                packageTitle: pkg.titleEn
-              });
-            }
-          });
-        }
-      });
-      recipientPhones = recipients.map((r) => r.phone);
-      console.log(`\u{1F4F1} Found ${recipients.length} total persons across all packages`);
-    }
-  } else {
-    recipientTypeLabel = "SMS Subscribers";
-    let subscribers = db.subscribers.filter((s) => s.optInStatus === "Active" || s.optInStatus === true);
-    if (recipientFilter && typeof recipientFilter === "string") {
-      if (recipientFilter.startsWith("channel:")) {
-        const channel = recipientFilter.replace("channel:", "");
-        subscribers = subscribers.filter((s) => s.channel?.toLowerCase() === channel.toLowerCase());
-      } else if (recipientFilter.startsWith("package:")) {
-        const pkgId = recipientFilter.replace("package:", "");
-        subscribers = subscribers.filter((s) => String(s.packageInterestId) === String(pkgId));
-      } else if (recipientFilter.startsWith("Package:")) {
-        const pkgTitle = recipientFilter.replace("Package:", "").trim();
-        subscribers = subscribers.filter(
-          (s) => s.packageInterest && s.packageInterest.toLowerCase().includes(pkgTitle.toLowerCase())
-        );
-      }
-    } else if (sendToAll === false) {
-      if (channelFilter) {
-        subscribers = subscribers.filter((s) => s.channel === channelFilter);
-      }
-      if (packageInterestId) {
-        subscribers = subscribers.filter((s) => String(s.packageInterestId) === String(packageInterestId));
-      }
-    }
-    recipients = subscribers.map((s) => ({
-      phone: s.phone,
-      name: s.name || "",
-      email: s.email || "",
-      packageInterest: s.packageInterest || ""
+      priceEtb: item.priceEtb || Math.round(item.priceUsd * rate),
+      priceSar: item.priceSar || Math.round(item.priceUsd * 3.75)
     }));
-    recipientPhones = recipients.map((r) => r.phone);
-  }
-  const recipientsCount = recipientPhones.length;
-  const campaignId = `camp_${Date.now()}`;
-  recipients.forEach((rec, idx) => {
-    db.smsLogs.unshift({
-      id: `sms-${Date.now()}-${idx}`,
-      phone: rec.phone,
-      message,
-      status: "Delivered",
-      campaignName: campaignId,
-      sentAt: (/* @__PURE__ */ new Date()).toISOString()
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.get(
+  "/packages/:id",
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.findPackageById(req.params.id);
+    if (!item || !item.isActive) return fail(res, "Package not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.post(
+  "/packages/:id/click-whatsapp",
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.incrementPackageWhatsappClicks(req.params.id);
+    if (!item) return fail(res, "Package not found", 404);
+    return send(res, { whatsappClicks: item.whatsappClicks });
+  })
+);
+apiRouter.get(
+  "/admin/packages",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const data = await dbOperations.getAllPackages();
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.get(
+  "/admin/packages/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.findPackageById(req.params.id);
+    if (!item) return fail(res, "Package not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.post(
+  "/admin/packages",
+  authenticateJWT,
+  packageUpload,
+  asyncRoute(async (req, res) => {
+    const data = await dbOperations.createPackage(packageInput(req.body, req.file));
+    await dbOperations.createPriceLog({
+      packageId: data.id,
+      priceUsd: data.priceUsd,
+      priceEtb: data.priceEtb,
+      priceSar: data.priceSar,
+      reason: "Initial package creation",
+      updatedBy: "Admin"
     });
-  });
-  db.saveToFile();
-  res.json({
-    status: "success",
-    success: true,
-    message: "SMS campaign sent successfully",
-    data: {
-      recipientsCount,
-      recipients: recipientsCount,
-      sentCount: recipientsCount,
-      failedCount: 0,
-      campaignId,
-      sentAt: (/* @__PURE__ */ new Date()).toISOString(),
-      status: "Delivered",
-      recipientType: recipientTypeLabel,
-      recipientPhones: recipientPhones.slice(0, 10)
-      // Return first 10 for preview
-    }
-  });
+    return send(res, data, 201);
+  })
+);
+apiRouter.put(
+  "/admin/packages/:id",
+  authenticateJWT,
+  packageUpload,
+  asyncRoute(async (req, res) => {
+    const existing = await dbOperations.findPackageById(req.params.id);
+    if (!existing) return fail(res, "Package not found", 404);
+    const data = await dbOperations.updatePackage(
+      req.params.id,
+      packageInput({ ...existing, ...req.body }, req.file),
+      req.body.reason
+    );
+    return send(res, data);
+  })
+);
+apiRouter.delete(
+  "/admin/packages/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deletePackage(req.params.id);
+    if (!item) return fail(res, "Package not found", 404);
+    return send(res, { message: "Package deleted successfully" });
+  })
+);
+var galleryInput = (body, files) => ({
+  type: body.type === "video" ? "video" : "photo",
+  titleEn: body.titleEn || body.title_en || body.title || "",
+  titleAr: body.titleAr || body.title_ar || "",
+  imageUrl: files?.image?.[0] ? `/uploads/images/${files.image[0].filename}` : body.imageUrl || body.image_url || "",
+  thumbnailUrl: body.thumbnailUrl || "",
+  videoUrl: files?.video?.[0] ? `/uploads/videos/${files.video[0].filename}` : body.videoUrl || body.video_url || "",
+  duration: body.duration || "",
+  location: body.location || "",
+  description: body.description || "",
+  isActive: bool(body.isActive, true),
+  sortOrder: Number(body.sortOrder || body.sort_order || 0)
 });
-var handleGetSmsLogs = (req, res) => {
-  res.json({
-    status: "success",
-    success: true,
-    count: db.smsLogs.length,
-    data: db.smsLogs
-  });
-};
-apiRouter.get("/admin/sms/logs", authenticateJWT, handleGetSmsLogs);
-apiRouter.get("/admin/sms/campaigns", authenticateJWT, handleGetSmsLogs);
-apiRouter.get("/admin/dashboard/stats", authenticateJWT, (req, res) => {
-  const totalPackages = db.packages.length;
-  const activePackages = db.packages.filter((p) => p.isActive).length;
-  const totalGalleryItems = db.gallery.length;
-  const totalInquiries = db.inquiries.length;
-  const totalSubscribers = db.subscribers.length;
-  const totalWhatsappClicks = db.packages.reduce((acc, p) => acc + (p.whatsappClicks || 0), 0);
-  const smsSentThisMonth = db.smsLogs.length;
-  const categories = ["Economy", "Standard", "Premium", "VIP"];
-  const clicksByCategory = categories.map((cat) => ({
-    category: cat,
-    clicks: db.packages.filter((p) => p.category === cat).reduce((acc, p) => acc + (p.whatsappClicks || 0), 0)
-  }));
-  const recentInquiries = db.inquiries.slice(0, 5).map((inq) => ({
-    id: String(inq.id),
-    fullName: inq.fullName,
-    phone: inq.phone,
-    email: inq.email,
-    subject: inq.subject,
-    status: inq.status,
-    createdAt: inq.createdAt
-  }));
-  const recentGalleryUploads = db.gallery.slice(0, 5).map((gal) => ({
-    id: String(gal.id),
-    titleEn: gal.titleEn,
-    imageUrl: gal.imageUrl,
-    type: gal.type,
-    createdAt: gal.createdAt
-  }));
-  res.json({
-    status: "success",
-    success: true,
-    data: {
-      totalPackages,
-      activePackages,
-      totalGalleryItems,
-      totalInquiries,
-      totalSubscribers,
-      totalWhatsappClicks,
-      smsSentThisMonth,
-      clicksByCategory,
-      recentInquiries,
-      recentGalleryUploads
+apiRouter.get(
+  "/gallery",
+  asyncRoute(async (req, res) => {
+    let data = await dbOperations.getActiveGalleryItems();
+    if (req.query.type) {
+      data = data.filter((item) => item.type === String(req.query.type));
     }
-  });
-});
-apiRouter.get("/team-members", (req, res) => {
-  const activeMembers = db.teamMembers.filter((m) => m.isActive !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
-  res.json({
-    status: "success",
-    success: true,
-    count: activeMembers.length,
-    data: activeMembers
-  });
-});
-apiRouter.get("/admin/team-members", authenticateJWT, (req, res) => {
-  const sorted = [...db.teamMembers].sort((a, b) => (a.order || 0) - (b.order || 0));
-  res.json({
-    status: "success",
-    success: true,
-    count: sorted.length,
-    data: sorted
-  });
-});
-apiRouter.post("/admin/team-members", authenticateJWT, teamUpload, (req, res) => {
-  try {
-    console.log("\u{1F4E5} POST /admin/team-members - Request received");
-    console.log("\u{1F4CB} Body:", req.body);
-    console.log("\u{1F4C1} File:", req.file);
-    const { name, role, bio, order, isActive } = req.body;
-    const file = req.file;
-    let imageUrl = "";
-    if (file) {
-      imageUrl = `/uploads/team/${file.filename}`;
-      console.log(`\u{1F464} Team member image uploaded: ${file.filename} -> ${imageUrl}`);
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.get(
+  "/gallery/:id",
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.findGalleryItemById(req.params.id);
+    if (!item || !item.isActive) return fail(res, "Gallery item not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.get(
+  "/admin/gallery",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    let data = await dbOperations.getAllGalleryItems();
+    if (req.query.type) {
+      data = data.filter((item) => item.type === String(req.query.type));
     }
-    if (!name || !role || !bio) {
-      console.error("\u274C Missing required fields:", { name, role, bio });
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "Name, role, and bio are required"
-      });
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.post(
+  "/admin/gallery",
+  authenticateJWT,
+  galleryUploadFields,
+  asyncRoute(
+    async (req, res) => send(res, await dbOperations.createGalleryItem(galleryInput(req.body, req.files)), 201)
+  )
+);
+apiRouter.post(
+  "/admin/gallery/bulk",
+  authenticateJWT,
+  bulkUpload,
+  asyncRoute(async (req, res) => {
+    const files = req.files || [];
+    const data = await dbOperations.createManyGalleryItems(
+      files.map((file) => ({
+        type: file.mimetype.startsWith("video/") ? "video" : "photo",
+        titleEn: file.originalname,
+        imageUrl: file.mimetype.startsWith("image/") ? `/uploads/images/${file.filename}` : "",
+        videoUrl: file.mimetype.startsWith("video/") ? `/uploads/videos/${file.filename}` : ""
+      }))
+    );
+    return send(res, data, 201);
+  })
+);
+apiRouter.put(
+  "/admin/gallery/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateGalleryItem(req.params.id, req.body);
+    if (!item) return fail(res, "Gallery item not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/gallery/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteGalleryItem(req.params.id);
+    if (!item) return fail(res, "Gallery item not found", 404);
+    return send(res, { message: "Gallery item deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/admin/inquiries",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllInquiries()))
+);
+apiRouter.post(
+  "/inquiries",
+  asyncRoute(async (req, res) => {
+    if (!req.body.fullName || !req.body.phone || !req.body.message) {
+      return fail(res, "Name, phone and message are required", 400);
     }
-    if (!imageUrl) {
-      console.error("\u274C No image uploaded");
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "Image is required. Please upload a photo."
-      });
-    }
-    const existing = db.teamMembers.find((m) => m.name.toLowerCase() === name.trim().toLowerCase());
-    if (existing) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "A team member with this name already exists"
-      });
-    }
-    const newMember = {
-      id: `tm-${Date.now()}`,
-      name: name.trim(),
-      role: role.trim(),
-      bio: bio.trim(),
-      imageUrl,
-      order: order !== void 0 ? Number(order) : db.teamMembers.length + 1,
-      isActive: isActive !== void 0 ? Boolean(isActive) : true,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    db.addTeamMember(newMember);
-    console.log("\u2705 Team member created:", newMember);
-    res.status(201).json({
-      status: "success",
-      success: true,
-      message: "Team member added successfully",
-      data: newMember
-    });
-  } catch (err) {
-    console.error("\u274C Error creating team member:", err);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to create team member: " + err.message
-    });
-  }
-});
-apiRouter.put("/admin/team-members/:id", authenticateJWT, teamUpload, (req, res) => {
-  try {
-    console.log(`\u{1F4E5} PUT /admin/team-members/${req.params.id}`);
-    const index = db.teamMembers.findIndex((m) => m.id === req.params.id);
-    if (index === -1) {
-      return res.status(404).json({ status: "error", success: false, error: "Team member not found" });
-    }
-    const { name, role, bio, order, isActive } = req.body;
-    const file = req.file;
-    const existing = db.teamMembers[index];
-    let imageUrl = existing.imageUrl;
-    if (file) {
-      imageUrl = `/uploads/team/${file.filename}`;
-      console.log(`\u{1F464} Team member image updated: ${file.filename} -> ${imageUrl}`);
-    }
-    if (name) {
-      const duplicate = db.teamMembers.find(
-        (m) => m.name.toLowerCase() === name.trim().toLowerCase() && m.id !== req.params.id
+    return send(res, await dbOperations.createInquiry(req.body), 201);
+  })
+);
+apiRouter.put(
+  "/admin/inquiries/bulk-status",
+  authenticateJWT,
+  asyncRoute(
+    async (req, res) => send(
+      res,
+      await dbOperations.updateManyInquiryStatus(req.body.ids || [], req.body.status || "Contacted")
+    )
+  )
+);
+apiRouter.put(
+  "/admin/inquiries/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateInquiryStatus(req.params.id, req.body.status);
+    if (!item) return fail(res, "Inquiry not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/inquiries/bulk-delete",
+  authenticateJWT,
+  asyncRoute(
+    async (req, res) => send(res, { deleted: await dbOperations.deleteManyInquiries(req.body.ids || []) })
+  )
+);
+apiRouter.delete(
+  "/admin/inquiries/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteInquiry(req.params.id);
+    if (!item) return fail(res, "Inquiry not found", 404);
+    return send(res, { message: "Inquiry deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/admin/price-logs",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllPriceLogs()))
+);
+apiRouter.post(
+  "/admin/price-logs",
+  authenticateJWT,
+  asyncRoute(async (req, res) => send(res, await dbOperations.createPriceLog(req.body), 201))
+);
+apiRouter.post(
+  "/admin/sms/campaign",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const message = String(req.body.message || "");
+    if (!message) return fail(res, "Message is required", 400);
+    const recipientType = req.body.recipientType || "subscribers";
+    let recipients = [];
+    if (recipientType === "persons") {
+      const packages = await dbOperations.getAllPackages();
+      recipients = packages.flatMap(
+        (pkg) => (pkg.persons || []).filter((p) => p && p.phone).map((p) => ({ phone: p.phone, name: p.name || "", packageTitle: pkg.titleEn }))
       );
-      if (duplicate) {
-        return res.status(400).json({
-          status: "error",
-          success: false,
-          error: "A team member with this name already exists"
-        });
-      }
-    }
-    const updated = {
-      id: existing.id,
-      name: name !== void 0 ? name.trim() : existing.name,
-      role: role !== void 0 ? role.trim() : existing.role,
-      bio: bio !== void 0 ? bio.trim() : existing.bio,
-      imageUrl,
-      order: order !== void 0 ? Number(order) : existing.order,
-      isActive: isActive !== void 0 ? Boolean(isActive) : existing.isActive,
-      createdAt: existing.createdAt,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    db.updateTeamMember(index, updated);
-    res.json({
-      status: "success",
-      success: true,
-      message: "Team member updated successfully",
-      data: updated
-    });
-  } catch (err) {
-    console.error("\u274C Error updating team member:", err);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to update team member: " + err.message
-    });
-  }
-});
-apiRouter.delete("/admin/team-members/:id", authenticateJWT, (req, res) => {
-  const index = db.teamMembers.findIndex((m) => m.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Team member not found" });
-  }
-  db.deleteTeamMember(index);
-  res.json({
-    status: "success",
-    success: true,
-    message: "Team member deleted successfully"
-  });
-});
-apiRouter.get("/office-images", (req, res) => {
-  try {
-    const activeImages = db.officeImages.filter((img) => img.isActive !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
-    const formattedData = activeImages.map((img) => ({
-      id: img.id,
-      title: img.title || "",
-      imageUrl: img.imageUrl,
-      description: img.description || "",
-      order: img.order || 0,
-      isActive: img.isActive,
-      createdAt: img.createdAt,
-      updatedAt: img.updatedAt
-    }));
-    res.json({
-      status: "success",
-      success: true,
-      count: formattedData.length,
-      data: formattedData
-    });
-  } catch (error) {
-    console.error("\u274C Error fetching office images:", error);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to fetch office images"
-    });
-  }
-});
-apiRouter.get("/admin/office-images", authenticateJWT, (req, res) => {
-  const sorted = [...db.officeImages].sort((a, b) => (a.order || 0) - (b.order || 0));
-  const formattedData = sorted.map((img) => ({
-    id: img.id,
-    title: img.title || "",
-    imageUrl: img.imageUrl,
-    description: img.description || "",
-    order: img.order || 0,
-    isActive: img.isActive,
-    createdAt: img.createdAt,
-    updatedAt: img.updatedAt
-  }));
-  res.json({
-    status: "success",
-    success: true,
-    count: formattedData.length,
-    data: formattedData
-  });
-});
-apiRouter.post("/admin/office-images", authenticateJWT, officeUpload, (req, res) => {
-  try {
-    const { title, description, order, isActive } = req.body;
-    const file = req.file;
-    let imageUrl = "";
-    if (file) {
-      imageUrl = `/uploads/office/${file.filename}`;
-      console.log(`\u{1F4C1} Office image uploaded: ${file.filename} -> ${imageUrl}`);
-    }
-    if (!imageUrl) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "Image is required"
-      });
-    }
-    const newImage = {
-      id: `office-${Date.now()}`,
-      title: title || "",
-      imageUrl,
-      description: description || "",
-      order: order !== void 0 ? Number(order) : db.officeImages.length + 1,
-      isActive: isActive !== void 0 ? Boolean(isActive) : true,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    db.addOfficeImage(newImage);
-    res.status(201).json({
-      status: "success",
-      success: true,
-      message: "Office image added successfully",
-      data: newImage
-    });
-  } catch (err) {
-    console.error("\u274C Error creating office image:", err);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to create office image: " + err.message
-    });
-  }
-});
-apiRouter.put("/admin/office-images/:id", authenticateJWT, (req, res) => {
-  try {
-    const index = db.officeImages.findIndex((img) => img.id === req.params.id);
-    if (index === -1) {
-      return res.status(404).json({ status: "error", success: false, error: "Office image not found" });
-    }
-    const { title, description, order, isActive } = req.body;
-    const existing = db.officeImages[index];
-    const updated = {
-      id: existing.id,
-      title: title !== void 0 ? title : existing.title,
-      imageUrl: existing.imageUrl,
-      description: description !== void 0 ? description : existing.description,
-      order: order !== void 0 ? Number(order) : existing.order,
-      isActive: isActive !== void 0 ? Boolean(isActive) : existing.isActive,
-      createdAt: existing.createdAt,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    db.updateOfficeImage(index, updated);
-    res.json({
-      status: "success",
-      success: true,
-      message: "Office image updated successfully",
-      data: updated
-    });
-  } catch (err) {
-    console.error("\u274C Error updating office image:", err);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to update office image: " + err.message
-    });
-  }
-});
-apiRouter.delete("/admin/office-images/:id", authenticateJWT, (req, res) => {
-  const index = db.officeImages.findIndex((img) => img.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Office image not found" });
-  }
-  db.deleteOfficeImage(index);
-  res.json({
-    status: "success",
-    success: true,
-    message: "Office image deleted successfully"
-  });
-});
-apiRouter.get("/testimonials", (req, res) => {
-  try {
-    console.log("\u{1F4E5} GET /testimonials - Fetching testimonials");
-    const activeTestimonials = db.testimonials.filter((t) => t.isActive !== false).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    const formattedData = activeTestimonials.map((t) => ({
-      id: t.id || `test-${Date.now()}`,
-      name: t.name || "Anonymous",
-      location: t.location || "",
-      rating: t.rating || 5,
-      text: t.text || "",
-      textAr: t.textAr || t.text || "",
-      date: t.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-      isActive: t.isActive !== void 0 ? t.isActive : true,
-      createdAt: t.createdAt || (/* @__PURE__ */ new Date()).toISOString(),
-      updatedAt: t.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-    }));
-    res.json({
-      status: "success",
-      success: true,
-      count: formattedData.length,
-      data: formattedData
-    });
-  } catch (error) {
-    console.error("\u274C Error fetching testimonials:", error);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to fetch testimonials",
-      details: error.message
-    });
-  }
-});
-apiRouter.get("/admin/testimonials", authenticateJWT, (req, res) => {
-  const sorted = [...db.testimonials].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  const formattedData = sorted.map((t) => ({
-    id: t.id,
-    name: t.name,
-    location: t.location || "",
-    rating: t.rating || 5,
-    text: t.text,
-    textAr: t.textAr || t.text,
-    date: t.date,
-    isActive: t.isActive,
-    createdAt: t.createdAt,
-    updatedAt: t.updatedAt
-  }));
-  res.json({
-    status: "success",
-    success: true,
-    count: formattedData.length,
-    data: formattedData
-  });
-});
-apiRouter.post("/admin/testimonials", authenticateJWT, (req, res) => {
-  const { name, location, rating, text, textAr, date, isActive } = req.body;
-  if (!name || !text || !rating) {
-    return res.status(400).json({
-      status: "error",
-      success: false,
-      error: "Name, text, and rating are required"
-    });
-  }
-  const newTestimonial = {
-    id: `test-${Date.now()}`,
-    name: name.trim(),
-    location: location || "",
-    rating: Number(rating),
-    text: text.trim(),
-    textAr: textAr || text.trim(),
-    // avatar: '', // REMOVED
-    date: date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-    isActive: isActive !== void 0 ? Boolean(isActive) : true,
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  db.addTestimonial(newTestimonial);
-  res.status(201).json({
-    status: "success",
-    success: true,
-    message: "Testimonial added successfully",
-    data: newTestimonial
-  });
-});
-apiRouter.put("/admin/testimonials/:id", authenticateJWT, (req, res) => {
-  const index = db.testimonials.findIndex((t) => t.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Testimonial not found" });
-  }
-  const { name, location, rating, text, textAr, date, isActive } = req.body;
-  const existing = db.testimonials[index];
-  const updated = {
-    id: existing.id,
-    name: name !== void 0 ? name.trim() : existing.name,
-    location: location !== void 0 ? location : existing.location,
-    rating: rating !== void 0 ? Number(rating) : existing.rating,
-    text: text !== void 0 ? text.trim() : existing.text,
-    textAr: textAr !== void 0 ? textAr.trim() : existing.textAr || existing.text,
-    // avatar: existing.avatar, // REMOVED
-    date: date !== void 0 ? date : existing.date,
-    isActive: isActive !== void 0 ? Boolean(isActive) : existing.isActive,
-    createdAt: existing.createdAt,
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  db.updateTestimonial(index, updated);
-  res.json({
-    status: "success",
-    success: true,
-    message: "Testimonial updated successfully",
-    data: updated
-  });
-});
-apiRouter.delete("/admin/testimonials/:id", authenticateJWT, (req, res) => {
-  const index = db.testimonials.findIndex((t) => t.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ status: "error", success: false, error: "Testimonial not found" });
-  }
-  db.deleteTestimonial(index);
-  res.json({
-    status: "success",
-    success: true,
-    message: "Testimonial deleted successfully"
-  });
-});
-apiRouter.get("/admin/subscribers", authenticateJWT, (req, res) => {
-  try {
-    const sorted = [...db.subscribers].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    res.json({
-      status: "success",
-      success: true,
-      count: sorted.length,
-      data: sorted
-    });
-  } catch (error) {
-    console.error("\u274C Error fetching subscribers:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to fetch subscribers" });
-  }
-});
-apiRouter.post("/subscribers", (req, res) => {
-  try {
-    const { phone, email, name, channel, packageInterestId, optInStatus } = req.body;
-    if (!phone) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "Phone number is required"
-      });
-    }
-    const existing = db.subscribers.find((s) => s.phone === phone);
-    if (existing) {
-      existing.email = email || existing.email;
-      existing.name = name || existing.name;
-      existing.channel = channel || existing.channel;
-      existing.packageInterestId = packageInterestId || existing.packageInterestId;
-      existing.optInStatus = true;
-      existing.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      db.saveToFile();
-      return res.json({
-        status: "success",
-        success: true,
-        message: "Subscriber updated successfully",
-        data: existing
-      });
-    }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const newSubscriber = {
-      id: `sub-${Date.now()}`,
-      phone,
-      email: email || "",
-      name: name || "",
-      channel: channel || "Web Banner",
-      // Default for website signups
-      packageInterestId: packageInterestId || null,
-      optInStatus: optInStatus !== void 0 ? optInStatus : true,
-      dateSubscribed: now,
-      createdAt: now,
-      updatedAt: now
-    };
-    db.subscribers.unshift(newSubscriber);
-    db.saveToFile();
-    res.status(201).json({
-      status: "success",
-      success: true,
-      message: "Subscriber created successfully",
-      data: newSubscriber
-    });
-  } catch (error) {
-    console.error("\u274C Error creating subscriber:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to create subscriber" });
-  }
-});
-apiRouter.post("/admin/subscribers", authenticateJWT, (req, res) => {
-  try {
-    const { phone, email, name, channel, packageInterestId, optInStatus } = req.body;
-    if (!phone) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "Phone number is required"
-      });
-    }
-    const existing = db.subscribers.find((s) => s.phone === phone);
-    if (existing) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "Subscriber with this phone number already exists"
-      });
-    }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const newSubscriber = {
-      id: `sub-${Date.now()}`,
-      phone,
-      email: email || "",
-      name: name || "",
-      channel: channel || "Others",
-      // Default for admin added
-      packageInterestId: packageInterestId || null,
-      optInStatus: optInStatus !== void 0 ? optInStatus : true,
-      dateSubscribed: now,
-      createdAt: now,
-      updatedAt: now
-    };
-    db.subscribers.unshift(newSubscriber);
-    db.saveToFile();
-    res.status(201).json({
-      status: "success",
-      success: true,
-      message: "Subscriber added successfully",
-      data: newSubscriber
-    });
-  } catch (error) {
-    console.error("\u274C Error creating subscriber:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to create subscriber" });
-  }
-});
-apiRouter.delete("/admin/subscribers/bulk-delete", authenticateJWT, (req, res) => {
-  console.log("\u{1F525}\u{1F525}\u{1F525} BULK DELETE SUBSCRIBERS ENDPOINT HIT! \u{1F525}\u{1F525}\u{1F525}");
-  console.log("\u{1F4E5} Request body:", req.body);
-  try {
-    const { ids, id } = req.body;
-    let idsToDelete = [];
-    if (ids && Array.isArray(ids)) {
-      idsToDelete = ids;
-    } else if (id) {
-      idsToDelete = [id];
     } else {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "No subscriber IDs provided"
-      });
+      recipients = await dbOperations.getOptedInSubscribers();
     }
-    console.log("\u{1F4E5} IDs to delete:", idsToDelete);
-    console.log("\u{1F4CA} Current subscribers:", db.subscribers.map((s) => ({ id: s.id, phone: s.phone })));
-    let deletedCount = 0;
-    const deletedIds = [];
-    for (let i = db.subscribers.length - 1; i >= 0; i--) {
-      const subscriber = db.subscribers[i];
-      const subscriberId = String(subscriber.id);
-      const shouldDelete = idsToDelete.some((idToDelete) => String(idToDelete) === subscriberId);
-      if (shouldDelete) {
-        console.log(`\u{1F5D1}\uFE0F Deleting subscriber: ${subscriberId} - ${subscriber.phone}`);
-        deletedIds.push(subscriberId);
-        db.subscribers.splice(i, 1);
-        deletedCount++;
-      }
-    }
-    db.saveToFile();
-    console.log(`\u2705 Deleted ${deletedCount} subscribers`);
-    if (deletedCount === 0) {
-      return res.status(404).json({
-        status: "error",
-        success: false,
-        error: "No matching subscribers found to delete"
-      });
-    }
-    res.json({
-      status: "success",
-      success: true,
-      message: `Deleted ${deletedCount} subscribers`,
-      data: {
-        deletedCount,
-        deletedIds
-      }
+    const logs = await Promise.all(
+      recipients.map(
+        (recipient) => dbOperations.createSmsLog({
+          phone: recipient.phone,
+          message,
+          campaignName: req.body.campaignName,
+          status: "Delivered"
+        })
+      )
+    );
+    return send(res, {
+      sent: logs.length,
+      recipientType,
+      recipientsCount: recipients.length,
+      logs
     });
-  } catch (error) {
-    console.error("\u274C Error bulk deleting subscribers:", error);
-    res.status(500).json({
-      status: "error",
-      success: false,
-      error: "Failed to bulk delete subscribers"
+  })
+);
+var smsLogs = asyncRoute(async (_req, res) => send(res, await dbOperations.getAllSmsLogs()));
+apiRouter.get("/admin/sms/logs", authenticateJWT, smsLogs);
+apiRouter.get("/admin/sms/campaigns", authenticateJWT, smsLogs);
+apiRouter.get(
+  "/admin/dashboard/stats",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getDashboardStats()))
+);
+var uploadBody = (req, field, fallback = "") => fileUrl(req, field, req.body.imageUrl || fallback);
+apiRouter.get(
+  "/team-members",
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getActiveTeamMembers()))
+);
+apiRouter.get(
+  "/admin/team-members",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllTeamMembers()))
+);
+apiRouter.post(
+  "/admin/team-members",
+  authenticateJWT,
+  teamUpload,
+  asyncRoute(async (req, res) => {
+    const member = await dbOperations.createTeamMember({
+      name: req.body.name,
+      role: req.body.role,
+      bio: req.body.bio,
+      imageUrl: uploadBody(req, "team"),
+      order: Number(req.body.order || 0),
+      isActive: bool(req.body.isActive, true)
     });
-  }
-});
-apiRouter.delete("/admin/subscribers/:id", authenticateJWT, (req, res) => {
-  try {
-    const index = db.subscribers.findIndex((s) => String(s.id) === String(req.params.id));
-    if (index === -1) {
-      return res.status(404).json({ status: "error", success: false, error: "Subscriber not found" });
-    }
-    db.deleteSubscriber(index);
-    res.json({
-      status: "success",
-      success: true,
-      message: "Subscriber deleted successfully"
+    return send(res, member, 201);
+  })
+);
+apiRouter.put(
+  "/admin/team-members/:id",
+  authenticateJWT,
+  teamUpload,
+  asyncRoute(async (req, res) => {
+    const updateData = {
+      name: req.body.name,
+      role: req.body.role,
+      bio: req.body.bio,
+      image_url: uploadBody(req, "team", req.body.imageUrl),
+      sort_order: Number(req.body.order || 0),
+      is_active: req.body.isActive === void 0 ? void 0 : bool(req.body.isActive, true)
+    };
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === void 0 && delete updateData[key]
+    );
+    const item = await dbOperations.updateTeamMember(req.params.id, updateData);
+    if (!item) return fail(res, "Team member not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/team-members/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteTeamMember(req.params.id);
+    if (!item) return fail(res, "Team member not found", 404);
+    return send(res, { message: "Team member deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/office-images",
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getActiveOfficeImages()))
+);
+apiRouter.get(
+  "/admin/office-images",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllOfficeImages()))
+);
+apiRouter.post(
+  "/admin/office-images",
+  authenticateJWT,
+  officeUpload,
+  asyncRoute(async (req, res) => {
+    const image = await dbOperations.createOfficeImage({
+      title: req.body.title || "",
+      imageUrl: uploadBody(req, "office"),
+      description: req.body.description || "",
+      order: Number(req.body.order || 0),
+      isActive: bool(req.body.isActive, true)
     });
-  } catch (error) {
-    console.error("\u274C Error deleting subscriber:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to delete subscriber" });
-  }
-});
-apiRouter.put("/admin/subscribers/:id", authenticateJWT, (req, res) => {
-  try {
-    const subscriber = db.subscribers.find((s) => String(s.id) === String(req.params.id));
-    if (!subscriber) {
-      return res.status(404).json({ status: "error", success: false, error: "Subscriber not found" });
-    }
-    const { optInStatus, email, name, channel, packageInterestId } = req.body;
-    if (optInStatus !== void 0) subscriber.optInStatus = optInStatus;
-    if (email !== void 0) subscriber.email = email;
-    if (name !== void 0) subscriber.name = name;
-    if (channel !== void 0) subscriber.channel = channel;
-    if (packageInterestId !== void 0) subscriber.packageInterestId = packageInterestId;
-    subscriber.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    db.saveToFile();
-    res.json({
-      status: "success",
-      success: true,
-      message: "Subscriber updated successfully",
-      data: subscriber
-    });
-  } catch (error) {
-    console.error("\u274C Error updating subscriber:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to update subscriber" });
-  }
-});
-apiRouter.post("/admin/subscribers/bulk", authenticateJWT, (req, res) => {
-  try {
-    const { subscribers } = req.body;
-    if (!subscribers || !Array.isArray(subscribers) || subscribers.length === 0) {
-      return res.status(400).json({
-        status: "error",
-        success: false,
-        error: "No subscribers provided for import"
-      });
-    }
-    let addedCount = 0;
-    let updatedCount = 0;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    for (const sub of subscribers) {
-      if (!sub.phone) continue;
-      const existing = db.subscribers.find((s) => s.phone === sub.phone);
-      if (existing) {
-        existing.email = sub.email || existing.email;
-        existing.name = sub.name || existing.name;
-        existing.channel = sub.channel || existing.channel;
-        existing.packageInterestId = sub.packageInterestId || existing.packageInterestId;
-        existing.optInStatus = true;
-        existing.updatedAt = now;
-        updatedCount++;
-      } else {
-        const newSubscriber = {
-          id: `sub-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          phone: sub.phone,
-          email: sub.email || "",
-          name: sub.name || "",
-          channel: sub.channel || "Bulk Import",
-          packageInterestId: sub.packageInterestId || null,
-          optInStatus: true,
-          dateSubscribed: now,
-          createdAt: now,
-          updatedAt: now
-        };
-        db.subscribers.unshift(newSubscriber);
-        addedCount++;
-      }
-    }
-    db.saveToFile();
-    res.json({
-      status: "success",
-      success: true,
-      message: `Imported ${addedCount} new subscribers, updated ${updatedCount} existing`,
-      data: {
-        added: addedCount,
-        updated: updatedCount
-      }
-    });
-  } catch (error) {
-    console.error("\u274C Error bulk importing subscribers:", error);
-    res.status(500).json({ status: "error", success: false, error: "Failed to bulk import subscribers" });
-  }
-});
+    return send(res, image, 201);
+  })
+);
+apiRouter.put(
+  "/admin/office-images/:id",
+  authenticateJWT,
+  officeUpload,
+  asyncRoute(async (req, res) => {
+    const updateData = {
+      title: req.body.title,
+      image_url: uploadBody(req, "office", req.body.imageUrl),
+      description: req.body.description,
+      sort_order: Number(req.body.order || 0),
+      is_active: req.body.isActive === void 0 ? void 0 : bool(req.body.isActive, true)
+    };
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === void 0 && delete updateData[key]
+    );
+    const item = await dbOperations.updateOfficeImage(req.params.id, updateData);
+    if (!item) return fail(res, "Office image not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/office-images/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteOfficeImage(req.params.id);
+    if (!item) return fail(res, "Office image not found", 404);
+    return send(res, { message: "Office image deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/testimonials",
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getActiveTestimonials()))
+);
+apiRouter.get(
+  "/admin/testimonials",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllTestimonials()))
+);
+apiRouter.post(
+  "/admin/testimonials",
+  authenticateJWT,
+  asyncRoute(async (req, res) => send(res, await dbOperations.createTestimonial(req.body), 201))
+);
+apiRouter.put(
+  "/admin/testimonials/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateTestimonial(req.params.id, req.body);
+    if (!item) return fail(res, "Testimonial not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/testimonials/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteTestimonial(req.params.id);
+    if (!item) return fail(res, "Testimonial not found", 404);
+    return send(res, { message: "Testimonial deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/admin/subscribers",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllSubscribers()))
+);
+apiRouter.post(
+  "/subscribers",
+  asyncRoute(async (req, res) => {
+    if (!req.body.phone) return fail(res, "Phone is required", 400);
+    return send(res, await dbOperations.createSubscriber(req.body), 201);
+  })
+);
+apiRouter.post(
+  "/admin/subscribers",
+  authenticateJWT,
+  asyncRoute(async (req, res) => send(res, await dbOperations.createSubscriber(req.body), 201))
+);
+apiRouter.delete(
+  "/admin/subscribers/bulk-delete",
+  authenticateJWT,
+  asyncRoute(
+    async (req, res) => send(res, {
+      deleted: await dbOperations.deleteSubscribers(req.body.ids || [], req.body.phones || [])
+    })
+  )
+);
+apiRouter.delete(
+  "/admin/subscribers/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteSubscriber(req.params.id);
+    if (!item) return fail(res, "Subscriber not found", 404);
+    return send(res, { message: "Subscriber deleted successfully" });
+  })
+);
+apiRouter.put(
+  "/admin/subscribers/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateSubscriber(req.params.id, req.body);
+    if (!item) return fail(res, "Subscriber not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.post(
+  "/admin/subscribers/bulk",
+  authenticateJWT,
+  asyncRoute(
+    async (req, res) => send(res, await dbOperations.bulkImportSubscribers(req.body.subscribers || req.body), 201)
+  )
+);
 
 // src/backend/swagger.ts
 var openApiSpec = {
@@ -3876,46 +2744,54 @@ var openApiSpec = {
 };
 
 // server.ts
-var import_multer4 = __toESM(require("multer"), 1);
-var import_fs4 = __toESM(require("fs"), 1);
+var import_fs2 = __toESM(require("fs"), 1);
 async function startServer() {
   const app = (0, import_express2.default)();
   const PORT = Number(process.env.PORT) || 3e3;
+  try {
+    const connected = await testConnection();
+    if (!connected) {
+      throw new Error("PostgreSQL connection test failed");
+    }
+    await initDatabase();
+    console.log("\u2705 Database initialization completed");
+  } catch (error) {
+    console.error("\u274C Database initialization failed:", error);
+    if (process.env.NODE_ENV === "production") {
+      console.error("Exiting in production due to DB failure.");
+      process.exit(1);
+    }
+  }
   initExchangeRateService();
-  const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",").map((s) => s.trim()) : [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:3000",
-    "https://delta-admin-beta.vercel.app",
-    "https://delta-public-website.vercel.app",
-    "https://delta-travel-backend.onrender.com"
-  ];
-  app.use((0, import_cors.default)({
-    origin: function(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        console.log("\u274C Blocked by CORS:", origin);
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Range"],
-    exposedHeaders: ["Content-Length", "Content-Range", "Accept-Ranges"],
-    credentials: true
-  }));
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map((origin) => origin.trim()).filter(Boolean);
+  app.use(
+    (0, import_cors.default)({
+      origin: function(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+          callback(null, true);
+        } else {
+          console.log("\u274C Blocked by CORS:", origin);
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Range"],
+      exposedHeaders: ["Content-Length", "Content-Range", "Accept-Ranges"],
+      credentials: true
+    })
+  );
   app.use(import_express2.default.json({ limit: "50mb" }));
   app.use(import_express2.default.urlencoded({ extended: true, limit: "50mb" }));
-  const uploadPath2 = import_path4.default.resolve(process.env.UPLOAD_PATH || "./uploads");
-  const videosPath2 = import_path4.default.join(uploadPath2, "videos");
-  const imagesPath2 = import_path4.default.join(uploadPath2, "images");
-  const packagesPath2 = import_path4.default.join(uploadPath2, "packages");
-  const teamPath2 = import_path4.default.join(uploadPath2, "team");
-  const officePath2 = import_path4.default.join(uploadPath2, "office");
+  const uploadPath2 = process.env.UPLOAD_PATH ? import_path2.default.resolve(process.env.UPLOAD_PATH) : import_path2.default.resolve(process.cwd(), "uploads");
+  const videosPath2 = import_path2.default.join(uploadPath2, "videos");
+  const imagesPath2 = import_path2.default.join(uploadPath2, "images");
+  const packagesPath2 = import_path2.default.join(uploadPath2, "packages");
+  const teamPath2 = import_path2.default.join(uploadPath2, "team");
+  const officePath2 = import_path2.default.join(uploadPath2, "office");
   [uploadPath2, videosPath2, imagesPath2, packagesPath2, teamPath2, officePath2].forEach((dir) => {
-    if (!import_fs4.default.existsSync(dir)) {
-      import_fs4.default.mkdirSync(dir, { recursive: true });
+    if (!import_fs2.default.existsSync(dir)) {
+      import_fs2.default.mkdirSync(dir, { recursive: true });
       console.log(`\u{1F4C1} Created directory: ${dir}`);
     }
   });
@@ -3928,110 +2804,38 @@ async function startServer() {
   const staticCors = (req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Range");
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Origin, X-Requested-With, Content-Type, Accept, Range"
+    );
     res.header("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
     if (req.method === "OPTIONS") {
       return res.sendStatus(200);
     }
     next();
   };
+  const setFileHeaders = (res, filePath) => {
+    if (filePath.endsWith(".mp4")) res.setHeader("Content-Type", "video/mp4");
+    else if (filePath.endsWith(".webm")) res.setHeader("Content-Type", "video/webm");
+    else if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg"))
+      res.setHeader("Content-Type", "image/jpeg");
+    else if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
+    else if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
+    else if (filePath.endsWith(".svg")) res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  };
   app.use("/uploads", staticCors);
-  app.use("/uploads", import_express2.default.static(uploadPath2, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".mp4")) res.setHeader("Content-Type", "video/mp4");
-      else if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) res.setHeader("Content-Type", "image/jpeg");
-      else if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
-      else if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  }));
+  app.use("/uploads", import_express2.default.static(uploadPath2, { setHeaders: setFileHeaders }));
   app.use("/uploads/images", staticCors);
-  app.use("/uploads/images", import_express2.default.static(imagesPath2, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) res.setHeader("Content-Type", "image/jpeg");
-      else if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
-      else if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  }));
+  app.use("/uploads/images", import_express2.default.static(imagesPath2, { setHeaders: setFileHeaders }));
   app.use("/uploads/videos", staticCors);
-  app.use("/uploads/videos", import_express2.default.static(videosPath2, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".mp4")) res.setHeader("Content-Type", "video/mp4");
-      else if (filePath.endsWith(".webm")) res.setHeader("Content-Type", "video/webm");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  }));
+  app.use("/uploads/videos", import_express2.default.static(videosPath2, { setHeaders: setFileHeaders }));
   app.use("/uploads/packages", staticCors);
-  app.use("/uploads/packages", import_express2.default.static(packagesPath2, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) res.setHeader("Content-Type", "image/jpeg");
-      else if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
-      else if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  }));
+  app.use("/uploads/packages", import_express2.default.static(packagesPath2, { setHeaders: setFileHeaders }));
   app.use("/uploads/team", staticCors);
-  app.use("/uploads/team", import_express2.default.static(teamPath2, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) res.setHeader("Content-Type", "image/jpeg");
-      else if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
-      else if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  }));
+  app.use("/uploads/team", import_express2.default.static(teamPath2, { setHeaders: setFileHeaders }));
   app.use("/uploads/office", staticCors);
-  app.use("/uploads/office", import_express2.default.static(officePath2, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) res.setHeader("Content-Type", "image/jpeg");
-      else if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
-      else if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  }));
-  app.use("/uploads", staticCors);
-  app.use("/uploads", import_express2.default.static(uploadPath2, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
-      else if (filePath.endsWith(".svg")) res.setHeader("Content-Type", "image/svg+xml");
-      else if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-    }
-  }));
-  const storage2 = import_multer4.default.diskStorage({
-    destination: (req, file, cb) => {
-      if (file.mimetype.startsWith("video/")) {
-        console.log(`\u{1F3AC} Saving video to: ${videosPath2}`);
-        cb(null, videosPath2);
-      } else if (file.mimetype.startsWith("image/")) {
-        console.log(`\u{1F5BC}\uFE0F Saving image to: ${imagesPath2}`);
-        cb(null, imagesPath2);
-      } else {
-        console.log(`\u{1F4C1} Saving to default: ${imagesPath2}`);
-        cb(null, imagesPath2);
-      }
-    },
-    filename: (req, file, cb) => {
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-]/g, "_");
-      cb(null, uniqueSuffix + "-" + sanitizedName);
-    }
-  });
-  const upload3 = (0, import_multer4.default)({
-    storage: storage2,
-    limits: { fileSize: 500 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-      if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) {
-        cb(null, true);
-      } else {
-        cb(new Error("Only images and videos are allowed"));
-      }
-    }
-  });
-  app.use((req, res, next) => {
-    req.upload = upload3;
-    next();
-  });
+  app.use("/uploads/office", import_express2.default.static(officePath2, { setHeaders: setFileHeaders }));
   app.get("/health", (req, res) => {
     res.json({ status: "ok", service: "Delta Travel API Backend", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   });
@@ -4057,12 +2861,10 @@ async function startServer() {
           "GET /api/social-links",
           "GET /api/team-members",
           "GET /api/office-images",
+          "GET /api/testimonials",
           "GET /api/health"
         ],
-        auth: [
-          "POST /api/admin/auth/login",
-          "GET /api/admin/auth/me"
-        ],
+        auth: ["POST /api/admin/auth/login", "GET /api/admin/auth/me"],
         admin: [
           "GET /api/admin/packages",
           "POST /api/admin/packages",
@@ -4103,7 +2905,11 @@ async function startServer() {
           "GET /api/admin/office-images",
           "POST /api/admin/office-images",
           "PUT /api/admin/office-images/:id",
-          "DELETE /api/admin/office-images/:id"
+          "DELETE /api/admin/office-images/:id",
+          "GET /api/admin/testimonials",
+          "POST /api/admin/testimonials",
+          "PUT /api/admin/testimonials/:id",
+          "DELETE /api/admin/testimonials/:id"
         ]
       }
     });
@@ -4112,26 +2918,30 @@ async function startServer() {
   app.get("/api-docs/openapi.json", (req, res) => {
     res.json(openApiSpec);
   });
-  app.use("/api-docs", import_swagger_ui_express.default.serve, import_swagger_ui_express.default.setup(openApiSpec, {
-    swaggerOptions: {
-      defaultModelExpandDepth: 3,
-      docExpansion: "list",
-      filter: true,
-      showExtensions: true,
-      showCommonExtensions: true,
-      tryItOutEnabled: true,
-      persistAuthorization: true,
-      displayRequestDuration: true
-    }
-  }));
+  app.use(
+    "/api-docs",
+    import_swagger_ui_express.default.serve,
+    import_swagger_ui_express.default.setup(openApiSpec, {
+      swaggerOptions: {
+        defaultModelExpandDepth: 3,
+        docExpansion: "list",
+        filter: true,
+        showExtensions: true,
+        showCommonExtensions: true,
+        tryItOutEnabled: true,
+        persistAuthorization: true,
+        displayRequestDuration: true
+      }
+    })
+  );
   app.use((err, req, res, next) => {
-    if (err instanceof import_multer4.default.MulterError) {
-      if (err.code === "FILE_TOO_LARGE") {
+    if (err?.name === "MulterError") {
+      if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(413).json({ success: false, message: "File too large. Maximum size is 500MB." });
       }
       return res.status(400).json({ success: false, message: `Multer error: ${err.message}` });
     }
-    if (err.message === "Only images and videos are allowed") {
+    if (err?.message === "Only images and videos are allowed") {
       return res.status(400).json({ success: false, message: err.message });
     }
     next(err);
@@ -4145,18 +2955,12 @@ async function startServer() {
     });
   });
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`=======================================================`);
+    console.log("=======================================================");
     console.log(`\u2708\uFE0F Delta Travel & Tour Server running on http://0.0.0.0:${PORT}`);
     console.log(`\u{1F4C4} Swagger OpenAPI Docs available at http://0.0.0.0:${PORT}/api-docs`);
     console.log(`\u{1F4CA} API Root JSON available at http://0.0.0.0:${PORT}/`);
     console.log(`\u{1F4C1} Uploads directory: ${uploadPath2}`);
-    console.log(`\u{1F4F9} Videos directory: ${videosPath2}`);
-    console.log(`\u{1F5BC}\uFE0F Images directory: ${imagesPath2}`);
-    console.log(`\u{1F4E6} Packages directory: ${packagesPath2}`);
-    console.log(`\u{1F464} Team directory: ${teamPath2}`);
-    console.log(`\u{1F464} Office Images directory: ${officePath2}`);
-    console.log(`=======================================================`);
+    console.log("=======================================================");
   });
 }
 startServer();
-//# sourceMappingURL=server.cjs.map
