@@ -4,11 +4,21 @@ import bcrypt from 'bcryptjs';
 // ============================================================
 // DATABASE CONNECTION
 // ============================================================
+const DATABASE_URL = process.env.DATABASE_URL || '';
+
+// Only use SSL for remote databases (Render, etc.)
+// cPanel's local Postgres does NOT support SSL
+const useSSL = !DATABASE_URL.includes('localhost') && 
+               !DATABASE_URL.includes('127.0.0.1') &&
+               !DATABASE_URL.includes('/var/run/postgresql');
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  connectionString: DATABASE_URL,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
   connectionTimeoutMillis: 10000,
 });
+
+console.log(`🔌 PostgreSQL: ${DATABASE_URL ? 'URL configured' : '❌ DATABASE_URL missing'} | SSL: ${useSSL}`);
 
 // ============================================================
 // HELPERS

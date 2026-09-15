@@ -36,11 +36,14 @@ var import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
 // src/backend/database.ts
 var import_pg = require("pg");
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
+var DATABASE_URL = process.env.DATABASE_URL || "";
+var useSSL = !DATABASE_URL.includes("localhost") && !DATABASE_URL.includes("127.0.0.1") && !DATABASE_URL.includes("/var/run/postgresql");
 var pool = new import_pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  connectionString: DATABASE_URL,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
   connectionTimeoutMillis: 1e4
 });
+console.log(`\u{1F50C} PostgreSQL: ${DATABASE_URL ? "URL configured" : "\u274C DATABASE_URL missing"} | SSL: ${useSSL}`);
 var json = (value, fallback = []) => {
   if (Array.isArray(value)) return value;
   if (typeof value === "string") {
