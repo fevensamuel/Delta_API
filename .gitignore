@@ -18,3 +18,14 @@ db_json.ts
 dist/index.html
 dist/assets/
 dist/server.cjs.map
+
+# Frontend files (backend-only repo)
+src/App.tsx
+src/main.tsx
+src/index.css
+src/components/
+
+# Old stuff
+migrations/
+curl
+uploads/

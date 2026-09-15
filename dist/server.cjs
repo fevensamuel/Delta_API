@@ -1579,8 +1579,12 @@ var openApiSpec = {
   },
   servers: [
     {
-      url: "https://delta-travel-backend.onrender.com",
+      url: "https://api.deltagrouptravelumrah.com",
       description: "\u{1F680} Production Server (Primary)"
+    },
+    {
+      url: "https://delta-travel-backend.onrender.com",
+      description: "\u{1F680} Production Server (Render)"
     },
     {
       url: "http://localhost:3000",
