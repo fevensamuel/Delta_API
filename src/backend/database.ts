@@ -20,9 +20,6 @@ import type {
 // ============================================================
 const DATABASE_URL = process.env.DATABASE_URL || '';
 
-// SSL is only needed for remote managed databases.
-// cPanel's local Postgres does NOT support SSL.
-// Set DATABASE_SSL=true in env to force SSL on.
 const useSSL =
   process.env.DATABASE_SSL === 'true' ||
   /render\.com|heroku|amazonaws|neon\.tech|supabase\.co|railway\.app|sslmode=require/.test(
@@ -60,11 +57,9 @@ const mapRow = (row: any): any => {
   for (const [key, value] of Object.entries(row)) {
     mapped[key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
-  // Parse JSONB columns back into JS arrays
   for (const field of ['inclusions', 'availableDates', 'itinerary', 'discounts', 'persons']) {
     if (field in mapped) mapped[field] = json(mapped[field]);
   }
-  // Convert Date objects to ISO strings
   for (const field of ['createdAt', 'updatedAt', 'lastLogin', 'sentAt']) {
     if (mapped[field] instanceof Date) {
       mapped[field] = (mapped[field] as Date).toISOString();
@@ -96,7 +91,6 @@ export async function testConnection(): Promise<boolean> {
 // TABLE CREATION + MIGRATIONS
 // ============================================================
 async function createTables(client: PoolClient) {
-  // 1. Create all tables (idempotent — safe to run every startup)
   await client.query(`
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -265,9 +259,20 @@ async function createTables(client: PoolClient) {
       updated_by TEXT DEFAULT 'Admin',
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS contact_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      whatsapp_number TEXT DEFAULT '+251910136747',
+      phone_number TEXT DEFAULT '+251910136747',
+      sms_number TEXT DEFAULT '+251910136747',
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT contact_settings_single_row CHECK (id = 1)
+    );
   `);
 
-  // 2. ✅ Safe migrations — add missing columns to existing tables
+  // Safe migrations — add missing columns to existing tables
   await client.query(`
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
@@ -342,9 +347,16 @@ async function createTables(client: PoolClient) {
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS whatsapp_number TEXT DEFAULT '+251910136747';
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS phone_number TEXT DEFAULT '+251910136747';
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS sms_number TEXT DEFAULT '+251910136747';
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
   `);
 
-  // 3. ✅ Fix existing NULL values — normalize is_active to TRUE where missing
+  // Seed the single-row contact_settings if missing
+  await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
+
   await client.query(`
     UPDATE packages SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE gallery SET is_active = TRUE WHERE is_active IS NULL;
@@ -354,9 +366,9 @@ async function createTables(client: PoolClient) {
     UPDATE office_images SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE testimonials SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE contact_settings SET is_active = TRUE WHERE is_active IS NULL;
   `);
 
-  // 4. ✅ Set database-level defaults for is_active (defense in depth)
   await client.query(`
     ALTER TABLE packages ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE gallery ALTER COLUMN is_active SET DEFAULT TRUE;
@@ -366,6 +378,7 @@ async function createTables(client: PoolClient) {
     ALTER TABLE office_images ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE testimonials ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE contact_settings ALTER COLUMN is_active SET DEFAULT TRUE;
   `);
 }
 
@@ -377,7 +390,6 @@ export async function initDatabase(): Promise<void> {
   try {
     await createTables(client);
 
-    // ✅ Seed default admin (only if no admin exists)
     const existingAdmins = await client.query('SELECT COUNT(*) FROM admin_users');
     if (Number(existingAdmins.rows[0].count) === 0) {
       const passwordHash = await bcrypt.hash('Password_Admin@1526', 10);
@@ -416,7 +428,6 @@ const find = (table: string) => async (value: string) =>
 const remove = (table: string) => async (value: string) =>
   one(await pool.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [value]));
 
-// ✅ Helper: for any insert, default is_active to TRUE if undefined
 const defaultActive = (field: string, value: any) => {
   if (field === 'is_active' && (value === undefined || value === null)) {
     return true;
@@ -475,7 +486,6 @@ const packageData = (data: any) =>
       if (['inclusions', 'availableDates', 'itinerary', 'discounts', 'persons'].includes(camel)) {
         value = JSON.stringify(value ?? []);
       }
-      // ✅ Default is_active to TRUE
       if (camel === 'isActive' && (value === undefined || value === null)) {
         value = true;
       }
@@ -889,6 +899,56 @@ export const dbOperations = {
         [entityId]
       )
     ),
+
+  // ---------- CONTACT SETTINGS ----------
+  async getContactSettings() {
+    const result = await one(
+      await pool.query('SELECT * FROM contact_settings WHERE id = 1')
+    );
+    if (!result) {
+      return one(
+        await pool.query(
+          `INSERT INTO contact_settings (id) VALUES (1) RETURNING *`
+        )
+      );
+    }
+    return result;
+  },
+
+  async getActiveContactSettings() {
+    const settings = await this.getContactSettings();
+    if (!settings) return null;
+    if (settings.isActive === false) return null;
+    return settings;
+  },
+
+  async updateContactSettings(data: any) {
+    const entries: Array<[string, any]> = [
+      ['whatsapp_number', data.whatsappNumber],
+      ['phone_number', data.phoneNumber],
+      ['sms_number', data.smsNumber],
+      ['is_active', data.isActive],
+    ].filter(([, v]) => v !== undefined) as Array<[string, any]>;
+
+    if (!entries.length) {
+      return this.getContactSettings();
+    }
+
+    const values: any[] = [];
+    const sets: string[] = [];
+    entries.forEach(([field, value], i) => {
+      sets.push(`${field} = $${i + 1}`);
+      values.push(value);
+    });
+    values.push(1);
+
+    return one(
+      await pool.query(
+        `UPDATE contact_settings SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`,
+        values
+      )
+    );
+  },
 
   // ---------- DASHBOARD (DEFENSIVE) ----------
   async getDashboardStats() {

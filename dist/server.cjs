@@ -257,6 +257,17 @@ async function createTables(client) {
       updated_by TEXT DEFAULT 'Admin',
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS contact_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      whatsapp_number TEXT DEFAULT '+251910136747',
+      phone_number TEXT DEFAULT '+251910136747',
+      sms_number TEXT DEFAULT '+251910136747',
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT contact_settings_single_row CHECK (id = 1)
+    );
   `);
   await client.query(`
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
@@ -332,7 +343,13 @@ async function createTables(client) {
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS whatsapp_number TEXT DEFAULT '+251910136747';
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS phone_number TEXT DEFAULT '+251910136747';
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS sms_number TEXT DEFAULT '+251910136747';
+    ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
   `);
+  await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
   await client.query(`
     UPDATE packages SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE gallery SET is_active = TRUE WHERE is_active IS NULL;
@@ -342,6 +359,7 @@ async function createTables(client) {
     UPDATE office_images SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE testimonials SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE contact_settings SET is_active = TRUE WHERE is_active IS NULL;
   `);
   await client.query(`
     ALTER TABLE packages ALTER COLUMN is_active SET DEFAULT TRUE;
@@ -352,6 +370,7 @@ async function createTables(client) {
     ALTER TABLE office_images ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE testimonials ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE contact_settings ALTER COLUMN is_active SET DEFAULT TRUE;
   `);
 }
 async function initDatabase() {
@@ -815,6 +834,50 @@ var dbOperations = {
       [entityId]
     )
   ),
+  // ---------- CONTACT SETTINGS ----------
+  async getContactSettings() {
+    const result = await one(
+      await pool.query("SELECT * FROM contact_settings WHERE id = 1")
+    );
+    if (!result) {
+      return one(
+        await pool.query(
+          `INSERT INTO contact_settings (id) VALUES (1) RETURNING *`
+        )
+      );
+    }
+    return result;
+  },
+  async getActiveContactSettings() {
+    const settings = await this.getContactSettings();
+    if (!settings) return null;
+    if (settings.isActive === false) return null;
+    return settings;
+  },
+  async updateContactSettings(data) {
+    const entries = [
+      ["whatsapp_number", data.whatsappNumber],
+      ["phone_number", data.phoneNumber],
+      ["sms_number", data.smsNumber],
+      ["is_active", data.isActive]
+    ].filter(([, v]) => v !== void 0);
+    if (!entries.length) {
+      return this.getContactSettings();
+    }
+    const values = [];
+    const sets = [];
+    entries.forEach(([field, value], i) => {
+      sets.push(`${field} = $${i + 1}`);
+      values.push(value);
+    });
+    values.push(1);
+    return one(
+      await pool.query(
+        `UPDATE contact_settings SET ${sets.join(", ")}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`,
+        values
+      )
+    );
+  },
   // ---------- DASHBOARD (DEFENSIVE) ----------
   async getDashboardStats() {
     const safe = async (sql, fallback = 0) => {
@@ -1236,6 +1299,56 @@ apiRouter.delete(
     const item = await dbOperations.deleteSocialLink(req.params.id);
     if (!item) return fail(res, "Social Media link not found", 404);
     return send(res, { message: "Social Media link deleted successfully" });
+  })
+);
+apiRouter.get(
+  "/contact-settings",
+  asyncRoute(async (_req, res) => {
+    const settings = await dbOperations.getActiveContactSettings();
+    if (!settings) {
+      return send(res, {
+        whatsappNumber: null,
+        phoneNumber: null,
+        smsNumber: null
+      });
+    }
+    return send(res, {
+      whatsappNumber: settings.whatsapp_number ?? settings.whatsappNumber ?? null,
+      phoneNumber: settings.phone_number ?? settings.phoneNumber ?? null,
+      smsNumber: settings.sms_number ?? settings.smsNumber ?? null
+    });
+  })
+);
+apiRouter.get(
+  "/admin/contact-settings",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const settings = await dbOperations.getContactSettings();
+    return send(res, {
+      id: settings.id,
+      whatsappNumber: settings.whatsapp_number ?? settings.whatsappNumber ?? "",
+      phoneNumber: settings.phone_number ?? settings.phoneNumber ?? "",
+      smsNumber: settings.sms_number ?? settings.smsNumber ?? "",
+      isActive: settings.is_active !== void 0 ? settings.is_active : settings.isActive,
+      createdAt: settings.created_at ?? settings.createdAt,
+      updatedAt: settings.updated_at ?? settings.updatedAt
+    });
+  })
+);
+apiRouter.put(
+  "/admin/contact-settings",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const updated = await dbOperations.updateContactSettings(req.body);
+    return send(res, {
+      id: updated.id,
+      whatsappNumber: updated.whatsapp_number ?? updated.whatsappNumber ?? "",
+      phoneNumber: updated.phone_number ?? updated.phoneNumber ?? "",
+      smsNumber: updated.sms_number ?? updated.smsNumber ?? "",
+      isActive: updated.is_active !== void 0 ? updated.is_active : updated.isActive,
+      createdAt: updated.created_at ?? updated.createdAt,
+      updatedAt: updated.updated_at ?? updated.updatedAt
+    });
   })
 );
 apiRouter.get(

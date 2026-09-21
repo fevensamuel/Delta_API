@@ -237,6 +237,66 @@ apiRouter.delete(
 );
 
 // ============================================================
+// CONTACT SETTINGS
+// ============================================================
+
+// Public — get active contact settings (returns camelCase for frontend)
+apiRouter.get(
+  '/contact-settings',
+  asyncRoute(async (_req, res) => {
+    const settings = await db.getActiveContactSettings();
+    if (!settings) {
+      return send(res, {
+        whatsappNumber: null,
+        phoneNumber: null,
+        smsNumber: null,
+      });
+    }
+    return send(res, {
+      whatsappNumber: settings.whatsapp_number ?? settings.whatsappNumber ?? null,
+      phoneNumber: settings.phone_number ?? settings.phoneNumber ?? null,
+      smsNumber: settings.sms_number ?? settings.smsNumber ?? null,
+    });
+  })
+);
+
+// Admin — get full settings
+apiRouter.get(
+  '/admin/contact-settings',
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const settings = await db.getContactSettings();
+    return send(res, {
+      id: settings.id,
+      whatsappNumber: settings.whatsapp_number ?? settings.whatsappNumber ?? '',
+      phoneNumber: settings.phone_number ?? settings.phoneNumber ?? '',
+      smsNumber: settings.sms_number ?? settings.smsNumber ?? '',
+      isActive: settings.is_active !== undefined ? settings.is_active : settings.isActive,
+      createdAt: settings.created_at ?? settings.createdAt,
+      updatedAt: settings.updated_at ?? settings.updatedAt,
+    });
+  })
+);
+
+// Admin — update settings
+apiRouter.put(
+  '/admin/contact-settings',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const updated = await db.updateContactSettings(req.body);
+    return send(res, {
+      id: updated.id,
+      whatsappNumber: updated.whatsapp_number ?? updated.whatsappNumber ?? '',
+      phoneNumber: updated.phone_number ?? updated.phoneNumber ?? '',
+      smsNumber: updated.sms_number ?? updated.smsNumber ?? '',
+      isActive: updated.is_active !== undefined ? updated.is_active : updated.isActive,
+      createdAt: updated.created_at ?? updated.createdAt,
+      updatedAt: updated.updated_at ?? updated.updatedAt,
+    });
+  })
+);
+
+// ============================================================
 // FAQS
 // ============================================================
 apiRouter.get(
