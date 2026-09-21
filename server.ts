@@ -27,8 +27,6 @@ async function startServer() {
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
     console.error('⚠️  Server will continue running so migrations can retry on next request.');
-    // Do NOT exit — let the server run so the migration can be retried
-    // and so /health and error logs remain accessible.
   }
 
   // Initialize Exchange Rate Service
@@ -39,7 +37,7 @@ async function startServer() {
   // ============================================================
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
-    .map((origin) => origin.trim().replace(/\/$/, '')) // strip trailing slash
+    .map((origin) => origin.trim().replace(/\/$/, ''))
     .filter(Boolean);
 
   console.log('🌐 Allowed CORS origins:', allowedOrigins.length ? allowedOrigins : '(none)');
@@ -47,10 +45,7 @@ async function startServer() {
   app.use(
     cors({
       origin: function (origin, callback) {
-        // Allow requests with no origin (curl, Postman, server-to-server)
         if (!origin) return callback(null, true);
-
-        // If no origins configured, allow all (useful during setup)
         if (allowedOrigins.length === 0) return callback(null, true);
 
         const normalizedOrigin = origin.replace(/\/$/, '');
@@ -59,8 +54,6 @@ async function startServer() {
         }
 
         console.warn('❌ CORS blocked origin:', origin);
-        // Do NOT throw — just refuse to add CORS headers.
-        // The browser will block the response, but the server won't crash.
         return callback(null, false);
       },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -183,6 +176,7 @@ async function startServer() {
           'GET /api/team-members',
           'GET /api/office-images',
           'GET /api/testimonials',
+          'GET /api/contact-settings',
           'GET /api/health',
         ],
         auth: ['POST /api/admin/auth/login', 'GET /api/admin/auth/me'],
@@ -231,6 +225,8 @@ async function startServer() {
           'POST /api/admin/testimonials',
           'PUT /api/admin/testimonials/:id',
           'DELETE /api/admin/testimonials/:id',
+          'GET /api/admin/contact-settings',
+          'PUT /api/admin/contact-settings',
         ],
       },
     });

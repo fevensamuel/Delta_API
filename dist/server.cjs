@@ -3180,6 +3180,7 @@ async function startServer() {
           "GET /api/team-members",
           "GET /api/office-images",
           "GET /api/testimonials",
+          "GET /api/contact-settings",
           "GET /api/health"
         ],
         auth: ["POST /api/admin/auth/login", "GET /api/admin/auth/me"],
@@ -3227,7 +3228,9 @@ async function startServer() {
           "GET /api/admin/testimonials",
           "POST /api/admin/testimonials",
           "PUT /api/admin/testimonials/:id",
-          "DELETE /api/admin/testimonials/:id"
+          "DELETE /api/admin/testimonials/:id",
+          "GET /api/admin/contact-settings",
+          "PUT /api/admin/contact-settings"
         ]
       }
     });
