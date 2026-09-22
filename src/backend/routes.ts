@@ -9,6 +9,7 @@ import {
   teamUpload,
   officeUpload,
   packageUpload,
+  audioFileUpload,
 } from '../config/multer.js';
 import { authenticateJWT, AuthenticatedRequest } from './middleware.js';
 

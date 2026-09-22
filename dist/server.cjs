@@ -1252,7 +1252,7 @@ var teamUpload = upload.single("image");
 var packageUpload = upload.single("packageImage");
 var bulkUpload = upload.array("files", 50);
 var officeUpload = upload.single("image");
-var audioFileUpload2 = audioUpload.single("audio");
+var audioFileUpload = audioUpload.single("audio");
 
 // src/backend/middleware.ts
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
