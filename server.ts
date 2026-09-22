@@ -78,20 +78,24 @@ async function startServer() {
   const packagesPath = path.join(uploadPath, 'packages');
   const teamPath = path.join(uploadPath, 'team');
   const officePath = path.join(uploadPath, 'office');
+  const audioPath = path.join(uploadPath, 'audio');
 
-  [uploadPath, videosPath, imagesPath, packagesPath, teamPath, officePath].forEach((dir) => {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      console.log(`📁 Created directory: ${dir}`);
+  [uploadPath, videosPath, imagesPath, packagesPath, teamPath, officePath, audioPath].forEach(
+    (dir) => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`📁 Created directory: ${dir}`);
+      }
     }
-  });
+  );
 
   console.log('📁 Uploads directory:', uploadPath);
   console.log('📹 Videos directory:', videosPath);
   console.log('🖼️ Images directory:', imagesPath);
   console.log('📦 Packages directory:', packagesPath);
   console.log('👤 Team directory:', teamPath);
-  console.log('👤 Office directory:', officePath);
+  console.log('🏢 Office directory:', officePath);
+  console.log('🎵 Audio directory:', audioPath);
 
   // ============================================================
   // STATIC FILE SERVING
@@ -117,6 +121,10 @@ async function startServer() {
   const setFileHeaders = (res: express.Response, filePath: string) => {
     if (filePath.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
     else if (filePath.endsWith('.webm')) res.setHeader('Content-Type', 'video/webm');
+    else if (filePath.endsWith('.mp3')) res.setHeader('Content-Type', 'audio/mpeg');
+    else if (filePath.endsWith('.m4a')) res.setHeader('Content-Type', 'audio/mp4');
+    else if (filePath.endsWith('.wav')) res.setHeader('Content-Type', 'audio/wav');
+    else if (filePath.endsWith('.ogg')) res.setHeader('Content-Type', 'audio/ogg');
     else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg'))
       res.setHeader('Content-Type', 'image/jpeg');
     else if (filePath.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
@@ -142,6 +150,9 @@ async function startServer() {
 
   app.use('/uploads/office', staticCors);
   app.use('/uploads/office', express.static(officePath, { setHeaders: setFileHeaders }));
+
+  app.use('/uploads/audio', staticCors);
+  app.use('/uploads/audio', express.static(audioPath, { setHeaders: setFileHeaders }));
 
   // ============================================================
   // HEALTH CHECKS
@@ -177,6 +188,7 @@ async function startServer() {
           'GET /api/office-images',
           'GET /api/testimonials',
           'GET /api/contact-settings',
+          'GET /api/audio',
           'GET /api/health',
         ],
         auth: ['POST /api/admin/auth/login', 'GET /api/admin/auth/me'],
@@ -227,6 +239,13 @@ async function startServer() {
           'DELETE /api/admin/testimonials/:id',
           'GET /api/admin/contact-settings',
           'PUT /api/admin/contact-settings',
+          'GET /api/admin/audio',
+          'POST /api/admin/audio',
+          'POST /api/admin/audio/upload',
+          'PUT /api/admin/audio/:id',
+          'PATCH /api/admin/audio/:id/status',
+          'PATCH /api/admin/audio/reorder',
+          'DELETE /api/admin/audio/:id',
         ],
       },
     });
@@ -275,6 +294,12 @@ async function startServer() {
     if (err?.message === 'Only images and videos are allowed') {
       return res.status(400).json({ success: false, message: err.message });
     }
+    if (err?.message === 'Only images, videos, and audio files are allowed') {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    if (err?.message === 'Only audio files are allowed') {
+      return res.status(400).json({ success: false, message: err.message });
+    }
     next(err);
   });
 
@@ -296,6 +321,7 @@ async function startServer() {
     console.log(`📄 Swagger OpenAPI Docs available at http://0.0.0.0:${PORT}/api-docs`);
     console.log(`📊 API Root JSON available at http://0.0.0.0:${PORT}/`);
     console.log(`📁 Uploads directory: ${uploadPath}`);
+    console.log(`🎵 Audio directory: ${audioPath}`);
     console.log('=======================================================');
   });
 }

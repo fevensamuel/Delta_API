@@ -92,7 +92,9 @@ var NUMERIC_FIELDS = [
   // Price logs
   "previousPriceUsd",
   "previousPriceEtb",
-  "previousPriceSar"
+  "previousPriceSar",
+  // Audio
+  "duration"
 ];
 var mapRow = (row) => {
   if (!row) return void 0;
@@ -309,6 +311,19 @@ async function createTables(client) {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       CONSTRAINT contact_settings_single_row CHECK (id = 1)
     );
+
+    CREATE TABLE IF NOT EXISTS audio_tracks (
+      id TEXT PRIMARY KEY,
+      title_en TEXT NOT NULL,
+      title_am TEXT DEFAULT '',
+      title_ar TEXT DEFAULT '',
+      audio_url TEXT NOT NULL,
+      duration INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
   await client.query(`
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
@@ -389,6 +404,12 @@ async function createTables(client) {
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS phone_number TEXT DEFAULT '+251910136747';
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS sms_number TEXT DEFAULT '+251910136747';
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS title_ar TEXT DEFAULT '';
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0;
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
   `);
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
   await client.query(`
@@ -401,6 +422,7 @@ async function createTables(client) {
     UPDATE testimonials SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE contact_settings SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE audio_tracks SET is_active = TRUE WHERE is_active IS NULL;
   `);
   await client.query(`
     ALTER TABLE packages ALTER COLUMN is_active SET DEFAULT TRUE;
@@ -412,6 +434,7 @@ async function createTables(client) {
     ALTER TABLE testimonials ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE contact_settings ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE audio_tracks ALTER COLUMN is_active SET DEFAULT TRUE;
   `);
 }
 async function initDatabase() {
@@ -919,6 +942,66 @@ var dbOperations = {
       )
     );
   },
+  // ---------- AUDIO TRACKS ----------
+  getAllAudioTracks: list("audio_tracks", "sort_order ASC, created_at DESC"),
+  getActiveAudioTracks: list(
+    "audio_tracks",
+    "sort_order ASC, created_at DESC",
+    "is_active = TRUE"
+  ),
+  findAudioTrackById: find("audio_tracks"),
+  async createAudioTrack(data) {
+    return createEntity(
+      "audio_tracks",
+      {
+        ...data,
+        title_en: data.titleEn,
+        title_am: data.titleAm || "",
+        title_ar: data.titleAr || "",
+        audio_url: data.audioUrl,
+        duration: data.duration || 0,
+        sort_order: data.sortOrder || 0,
+        is_active: data.isActive
+      },
+      ["title_en", "title_am", "title_ar", "audio_url", "duration", "sort_order", "is_active"],
+      "audio"
+    );
+  },
+  updateAudioTrack: (entityId, data) => updateEntity(
+    "audio_tracks",
+    entityId,
+    {
+      ...data,
+      title_en: data.titleEn,
+      title_am: data.titleAm,
+      title_ar: data.titleAr,
+      audio_url: data.audioUrl,
+      duration: data.duration,
+      sort_order: data.sortOrder,
+      is_active: data.isActive
+    },
+    ["title_en", "title_am", "title_ar", "audio_url", "duration", "sort_order", "is_active"]
+  ),
+  deleteAudioTrack: remove("audio_tracks"),
+  async reorderAudioTracks(orderedIds) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (let i = 0; i < orderedIds.length; i++) {
+        await client.query(
+          "UPDATE audio_tracks SET sort_order = $1, updated_at = NOW() WHERE id = $2",
+          [i, orderedIds[i]]
+        );
+      }
+      await client.query("COMMIT");
+      return true;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
   // ---------- DASHBOARD (DEFENSIVE) ----------
   async getDashboardStats() {
     const safe = async (sql, fallback = 0) => {
@@ -938,7 +1021,8 @@ var dbOperations = {
       totalInquiries,
       totalSubscribers,
       totalWhatsappClicks,
-      smsSentThisMonth
+      smsSentThisMonth,
+      totalAudioTracks
     ] = await Promise.all([
       safe("SELECT COUNT(*)::int AS v FROM packages"),
       safe("SELECT COUNT(*)::int AS v FROM packages WHERE is_active"),
@@ -947,7 +1031,8 @@ var dbOperations = {
       safe("SELECT COUNT(*)::int AS v FROM subscribers"),
       safe("SELECT COALESCE(SUM(whatsapp_clicks),0)::int AS v FROM packages"),
       safe(`SELECT COUNT(*)::int AS v FROM sms_logs
-            WHERE sent_at >= date_trunc('month', NOW())`)
+            WHERE sent_at >= date_trunc('month', NOW())`),
+      safe("SELECT COUNT(*)::int AS v FROM audio_tracks WHERE is_active")
     ]);
     return {
       totalPackages,
@@ -956,7 +1041,8 @@ var dbOperations = {
       totalInquiries,
       totalSubscribers,
       totalWhatsappClicks,
-      smsSentThisMonth
+      smsSentThisMonth,
+      totalAudioTracks
     };
   }
 };
@@ -1089,7 +1175,8 @@ var imagesPath = import_path.default.join(uploadPath, "images");
 var packagesPath = import_path.default.join(uploadPath, "packages");
 var teamPath = import_path.default.join(uploadPath, "team");
 var officePath = import_path.default.join(uploadPath, "office");
-[videosPath, imagesPath, packagesPath, teamPath, officePath].forEach((dir) => {
+var audioPath = import_path.default.join(uploadPath, "audio");
+[videosPath, imagesPath, packagesPath, teamPath, officePath, audioPath].forEach((dir) => {
   if (!import_fs.default.existsSync(dir)) {
     import_fs.default.mkdirSync(dir, { recursive: true });
   }
@@ -1105,6 +1192,12 @@ var storage = import_multer.default.diskStorage({
     } else if (req.path && req.path.includes("/packages")) {
       console.log(`\u{1F4E6} Saving package image to: ${packagesPath}`);
       cb(null, packagesPath);
+    } else if (req.path && req.path.includes("/audio")) {
+      console.log(`\u{1F3B5} Saving audio to: ${audioPath}`);
+      cb(null, audioPath);
+    } else if (file.mimetype.startsWith("audio/")) {
+      console.log(`\u{1F3B5} Saving audio to: ${audioPath}`);
+      cb(null, audioPath);
     } else if (file.mimetype.startsWith("video/")) {
       console.log(`\u{1F3AC} Saving video to: ${videosPath}`);
       cb(null, videosPath);
@@ -1130,10 +1223,24 @@ var upload = (0, import_multer.default)({
     fileSize: 500 * 1024 * 1024
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) {
+    if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/") || file.mimetype.startsWith("audio/")) {
       cb(null, true);
     } else {
-      cb(new Error("Only images and videos are allowed"));
+      cb(new Error("Only images, videos, and audio files are allowed"));
+    }
+  }
+});
+var audioUpload = (0, import_multer.default)({
+  storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024
+    // 100 MB max per audio file
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("audio/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only audio files are allowed"));
     }
   }
 });
@@ -1145,6 +1252,7 @@ var teamUpload = upload.single("image");
 var packageUpload = upload.single("packageImage");
 var bulkUpload = upload.array("files", 50);
 var officeUpload = upload.single("image");
+var audioFileUpload2 = audioUpload.single("audio");
 
 // src/backend/middleware.ts
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
@@ -1923,6 +2031,120 @@ apiRouter.post(
   asyncRoute(
     async (req, res) => send(res, await dbOperations.bulkImportSubscribers(req.body.subscribers || req.body), 201)
   )
+);
+apiRouter.get(
+  "/audio",
+  asyncRoute(async (_req, res) => {
+    const data = await dbOperations.getActiveAudioTracks();
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.get(
+  "/admin/audio",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const data = await dbOperations.getAllAudioTracks();
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.get(
+  "/admin/audio/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.findAudioTrackById(req.params.id);
+    if (!item) return fail(res, "Audio track not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.post(
+  "/admin/audio/upload",
+  authenticateJWT,
+  audioFileUpload,
+  asyncRoute(async (req, res) => {
+    const file = req.file;
+    if (!file) return fail(res, "No audio file uploaded", 400);
+    return send(res, { audioUrl: `/uploads/audio/${file.filename}` }, 201);
+  })
+);
+apiRouter.post(
+  "/admin/audio",
+  authenticateJWT,
+  audioFileUpload,
+  asyncRoute(async (req, res) => {
+    const file = req.file;
+    if (!req.body.titleEn) {
+      return fail(res, "English title is required", 400);
+    }
+    const audioUrl = file ? `/uploads/audio/${file.filename}` : req.body.audioUrl;
+    if (!audioUrl) {
+      return fail(res, "Audio file or audioUrl is required", 400);
+    }
+    const track = await dbOperations.createAudioTrack({
+      titleEn: req.body.titleEn,
+      titleAm: req.body.titleAm || "",
+      titleAr: req.body.titleAr || "",
+      audioUrl,
+      duration: req.body.duration ? Number(req.body.duration) : 0,
+      sortOrder: req.body.sortOrder !== void 0 ? Number(req.body.sortOrder) : 0,
+      isActive: bool(req.body.isActive, true)
+    });
+    return send(res, track, 201);
+  })
+);
+apiRouter.put(
+  "/admin/audio/:id",
+  authenticateJWT,
+  audioFileUpload,
+  asyncRoute(async (req, res) => {
+    const file = req.file;
+    const updateData = {
+      titleEn: req.body.titleEn,
+      titleAm: req.body.titleAm,
+      titleAr: req.body.titleAr,
+      audioUrl: file ? `/uploads/audio/${file.filename}` : req.body.audioUrl,
+      duration: req.body.duration !== void 0 ? Number(req.body.duration) : void 0,
+      sortOrder: req.body.sortOrder !== void 0 ? Number(req.body.sortOrder) : void 0,
+      isActive: req.body.isActive === void 0 ? void 0 : bool(req.body.isActive, true)
+    };
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === void 0 && delete updateData[key]
+    );
+    const item = await dbOperations.updateAudioTrack(req.params.id, updateData);
+    if (!item) return fail(res, "Audio track not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.patch(
+  "/admin/audio/:id/status",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateAudioTrack(req.params.id, {
+      isActive: bool(req.body.isActive, true)
+    });
+    if (!item) return fail(res, "Audio track not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.patch(
+  "/admin/audio/reorder",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const ids = req.body.ids || [];
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return fail(res, "An array of track ids is required", 400);
+    }
+    await dbOperations.reorderAudioTracks(ids);
+    return send(res, { reordered: ids.length });
+  })
+);
+apiRouter.delete(
+  "/admin/audio/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteAudioTrack(req.params.id);
+    if (!item) return fail(res, "Audio track not found", 404);
+    return send(res, { message: "Audio track deleted successfully" });
+  })
 );
 
 // src/backend/swagger.ts
@@ -3148,18 +3370,22 @@ async function startServer() {
   const packagesPath2 = import_path2.default.join(uploadPath2, "packages");
   const teamPath2 = import_path2.default.join(uploadPath2, "team");
   const officePath2 = import_path2.default.join(uploadPath2, "office");
-  [uploadPath2, videosPath2, imagesPath2, packagesPath2, teamPath2, officePath2].forEach((dir) => {
-    if (!import_fs2.default.existsSync(dir)) {
-      import_fs2.default.mkdirSync(dir, { recursive: true });
-      console.log(`\u{1F4C1} Created directory: ${dir}`);
+  const audioPath2 = import_path2.default.join(uploadPath2, "audio");
+  [uploadPath2, videosPath2, imagesPath2, packagesPath2, teamPath2, officePath2, audioPath2].forEach(
+    (dir) => {
+      if (!import_fs2.default.existsSync(dir)) {
+        import_fs2.default.mkdirSync(dir, { recursive: true });
+        console.log(`\u{1F4C1} Created directory: ${dir}`);
+      }
     }
-  });
+  );
   console.log("\u{1F4C1} Uploads directory:", uploadPath2);
   console.log("\u{1F4F9} Videos directory:", videosPath2);
   console.log("\u{1F5BC}\uFE0F Images directory:", imagesPath2);
   console.log("\u{1F4E6} Packages directory:", packagesPath2);
   console.log("\u{1F464} Team directory:", teamPath2);
-  console.log("\u{1F464} Office directory:", officePath2);
+  console.log("\u{1F3E2} Office directory:", officePath2);
+  console.log("\u{1F3B5} Audio directory:", audioPath2);
   const staticCors = (req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
@@ -3176,6 +3402,10 @@ async function startServer() {
   const setFileHeaders = (res, filePath) => {
     if (filePath.endsWith(".mp4")) res.setHeader("Content-Type", "video/mp4");
     else if (filePath.endsWith(".webm")) res.setHeader("Content-Type", "video/webm");
+    else if (filePath.endsWith(".mp3")) res.setHeader("Content-Type", "audio/mpeg");
+    else if (filePath.endsWith(".m4a")) res.setHeader("Content-Type", "audio/mp4");
+    else if (filePath.endsWith(".wav")) res.setHeader("Content-Type", "audio/wav");
+    else if (filePath.endsWith(".ogg")) res.setHeader("Content-Type", "audio/ogg");
     else if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg"))
       res.setHeader("Content-Type", "image/jpeg");
     else if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
@@ -3195,6 +3425,8 @@ async function startServer() {
   app.use("/uploads/team", import_express2.default.static(teamPath2, { setHeaders: setFileHeaders }));
   app.use("/uploads/office", staticCors);
   app.use("/uploads/office", import_express2.default.static(officePath2, { setHeaders: setFileHeaders }));
+  app.use("/uploads/audio", staticCors);
+  app.use("/uploads/audio", import_express2.default.static(audioPath2, { setHeaders: setFileHeaders }));
   app.get("/health", (req, res) => {
     res.json({ status: "ok", service: "Delta Travel API Backend", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   });
@@ -3222,6 +3454,7 @@ async function startServer() {
           "GET /api/office-images",
           "GET /api/testimonials",
           "GET /api/contact-settings",
+          "GET /api/audio",
           "GET /api/health"
         ],
         auth: ["POST /api/admin/auth/login", "GET /api/admin/auth/me"],
@@ -3271,7 +3504,14 @@ async function startServer() {
           "PUT /api/admin/testimonials/:id",
           "DELETE /api/admin/testimonials/:id",
           "GET /api/admin/contact-settings",
-          "PUT /api/admin/contact-settings"
+          "PUT /api/admin/contact-settings",
+          "GET /api/admin/audio",
+          "POST /api/admin/audio",
+          "POST /api/admin/audio/upload",
+          "PUT /api/admin/audio/:id",
+          "PATCH /api/admin/audio/:id/status",
+          "PATCH /api/admin/audio/reorder",
+          "DELETE /api/admin/audio/:id"
         ]
       }
     });
@@ -3306,6 +3546,12 @@ async function startServer() {
     if (err?.message === "Only images and videos are allowed") {
       return res.status(400).json({ success: false, message: err.message });
     }
+    if (err?.message === "Only images, videos, and audio files are allowed") {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    if (err?.message === "Only audio files are allowed") {
+      return res.status(400).json({ success: false, message: err.message });
+    }
     next(err);
   });
   app.use((err, req, res, next) => {
@@ -3322,6 +3568,7 @@ async function startServer() {
     console.log(`\u{1F4C4} Swagger OpenAPI Docs available at http://0.0.0.0:${PORT}/api-docs`);
     console.log(`\u{1F4CA} API Root JSON available at http://0.0.0.0:${PORT}/`);
     console.log(`\u{1F4C1} Uploads directory: ${uploadPath2}`);
+    console.log(`\u{1F3B5} Audio directory: ${audioPath2}`);
     console.log("=======================================================");
   });
 }

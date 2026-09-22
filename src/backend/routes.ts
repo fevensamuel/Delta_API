@@ -939,3 +939,149 @@ apiRouter.post(
     send(res, await db.bulkImportSubscribers(req.body.subscribers || req.body), 201)
   )
 );
+
+// ============================================================
+// AUDIO TRACKS (Nasheed / Quran Player)
+// ============================================================
+
+// Public — get all active tracks (ordered)
+apiRouter.get(
+  '/audio',
+  asyncRoute(async (_req, res) => {
+    const data = await db.getActiveAudioTracks();
+    return res.json({ status: 'success', success: true, count: data.length, data });
+  })
+);
+
+// Admin — get all tracks (including inactive)
+apiRouter.get(
+  '/admin/audio',
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const data = await db.getAllAudioTracks();
+    return res.json({ status: 'success', success: true, count: data.length, data });
+  })
+);
+
+// Admin — get single track
+apiRouter.get(
+  '/admin/audio/:id',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await db.findAudioTrackById(req.params.id);
+    if (!item) return fail(res, 'Audio track not found', 404);
+    return send(res, item);
+  })
+);
+
+// Admin — upload audio file → returns the URL
+apiRouter.post(
+  '/admin/audio/upload',
+  authenticateJWT,
+  audioFileUpload,
+  asyncRoute(async (req, res) => {
+    const file = (req as any).file;
+    if (!file) return fail(res, 'No audio file uploaded', 400);
+    return send(res, { audioUrl: `/uploads/audio/${file.filename}` }, 201);
+  })
+);
+
+// Admin — create track
+apiRouter.post(
+  '/admin/audio',
+  authenticateJWT,
+  audioFileUpload,
+  asyncRoute(async (req, res) => {
+    const file = (req as any).file;
+
+    if (!req.body.titleEn) {
+      return fail(res, 'English title is required', 400);
+    }
+
+    const audioUrl = file
+      ? `/uploads/audio/${file.filename}`
+      : req.body.audioUrl;
+
+    if (!audioUrl) {
+      return fail(res, 'Audio file or audioUrl is required', 400);
+    }
+
+    const track = await db.createAudioTrack({
+      titleEn: req.body.titleEn,
+      titleAm: req.body.titleAm || '',
+      titleAr: req.body.titleAr || '',
+      audioUrl,
+      duration: req.body.duration ? Number(req.body.duration) : 0,
+      sortOrder: req.body.sortOrder !== undefined ? Number(req.body.sortOrder) : 0,
+      isActive: bool(req.body.isActive, true),
+    });
+
+    return send(res, track, 201);
+  })
+);
+
+// Admin — update track
+apiRouter.put(
+  '/admin/audio/:id',
+  authenticateJWT,
+  audioFileUpload,
+  asyncRoute(async (req, res) => {
+    const file = (req as any).file;
+
+    const updateData: any = {
+      titleEn: req.body.titleEn,
+      titleAm: req.body.titleAm,
+      titleAr: req.body.titleAr,
+      audioUrl: file ? `/uploads/audio/${file.filename}` : req.body.audioUrl,
+      duration: req.body.duration !== undefined ? Number(req.body.duration) : undefined,
+      sortOrder: req.body.sortOrder !== undefined ? Number(req.body.sortOrder) : undefined,
+      isActive: req.body.isActive === undefined ? undefined : bool(req.body.isActive, true),
+    };
+
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === undefined && delete updateData[key]
+    );
+
+    const item = await db.updateAudioTrack(req.params.id, updateData);
+    if (!item) return fail(res, 'Audio track not found', 404);
+    return send(res, item);
+  })
+);
+
+// Admin — toggle active status
+apiRouter.patch(
+  '/admin/audio/:id/status',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await db.updateAudioTrack(req.params.id, {
+      isActive: bool(req.body.isActive, true),
+    });
+    if (!item) return fail(res, 'Audio track not found', 404);
+    return send(res, item);
+  })
+);
+
+// Admin — reorder tracks (body: { ids: string[] } in desired order)
+apiRouter.patch(
+  '/admin/audio/reorder',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const ids: string[] = req.body.ids || [];
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return fail(res, 'An array of track ids is required', 400);
+    }
+    await db.reorderAudioTracks(ids);
+    return send(res, { reordered: ids.length });
+  })
+);
+
+// Admin — delete track
+apiRouter.delete(
+  '/admin/audio/:id',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await db.deleteAudioTrack(req.params.id);
+    if (!item) return fail(res, 'Audio track not found', 404);
+    return send(res, { message: 'Audio track deleted successfully' });
+  })
+);

@@ -310,3 +310,16 @@ export interface Person {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface AudioTrack {
+  id: string;
+  titleEn: string;
+  titleAm: string;
+  titleAr: string;
+  audioUrl: string;
+  duration: number;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

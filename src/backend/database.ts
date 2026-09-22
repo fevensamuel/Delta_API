@@ -13,6 +13,7 @@ import type {
   TeamMember,
   OfficeImage,
   Testimonial,
+  AudioTrack,
 } from '../types.js';
 
 // ============================================================
@@ -73,6 +74,8 @@ const NUMERIC_FIELDS = [
   'ageMin', 'ageMax',
   // Price logs
   'previousPriceUsd', 'previousPriceEtb', 'previousPriceSar',
+  // Audio
+  'duration',
 ];
 
 const mapRow = (row: any): any => {
@@ -301,9 +304,22 @@ async function createTables(client: PoolClient) {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       CONSTRAINT contact_settings_single_row CHECK (id = 1)
     );
+
+    CREATE TABLE IF NOT EXISTS audio_tracks (
+      id TEXT PRIMARY KEY,
+      title_en TEXT NOT NULL,
+      title_am TEXT DEFAULT '',
+      title_ar TEXT DEFAULT '',
+      audio_url TEXT NOT NULL,
+      duration INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 
-  // Safe migrations — add missing columns to existing tables
+  // Safe migrations
   await client.query(`
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
@@ -383,9 +399,14 @@ async function createTables(client: PoolClient) {
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS phone_number TEXT DEFAULT '+251910136747';
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS sms_number TEXT DEFAULT '+251910136747';
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS title_ar TEXT DEFAULT '';
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0;
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+    ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
   `);
 
-  // Seed the single-row contact_settings if missing
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
 
   await client.query(`
@@ -398,6 +419,7 @@ async function createTables(client: PoolClient) {
     UPDATE testimonials SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE contact_settings SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE audio_tracks SET is_active = TRUE WHERE is_active IS NULL;
   `);
 
   await client.query(`
@@ -410,6 +432,7 @@ async function createTables(client: PoolClient) {
     ALTER TABLE testimonials ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE contact_settings ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE audio_tracks ALTER COLUMN is_active SET DEFAULT TRUE;
   `);
 }
 
@@ -981,6 +1004,72 @@ export const dbOperations = {
     );
   },
 
+  // ---------- AUDIO TRACKS ----------
+  getAllAudioTracks: list('audio_tracks', 'sort_order ASC, created_at DESC'),
+  getActiveAudioTracks: list(
+    'audio_tracks',
+    'sort_order ASC, created_at DESC',
+    'is_active = TRUE'
+  ),
+  findAudioTrackById: find('audio_tracks'),
+
+  async createAudioTrack(data: any) {
+    return createEntity(
+      'audio_tracks',
+      {
+        ...data,
+        title_en: data.titleEn,
+        title_am: data.titleAm || '',
+        title_ar: data.titleAr || '',
+        audio_url: data.audioUrl,
+        duration: data.duration || 0,
+        sort_order: data.sortOrder || 0,
+        is_active: data.isActive,
+      },
+      ['title_en', 'title_am', 'title_ar', 'audio_url', 'duration', 'sort_order', 'is_active'],
+      'audio'
+    );
+  },
+
+  updateAudioTrack: (entityId: string, data: any) =>
+    updateEntity(
+      'audio_tracks',
+      entityId,
+      {
+        ...data,
+        title_en: data.titleEn,
+        title_am: data.titleAm,
+        title_ar: data.titleAr,
+        audio_url: data.audioUrl,
+        duration: data.duration,
+        sort_order: data.sortOrder,
+        is_active: data.isActive,
+      },
+      ['title_en', 'title_am', 'title_ar', 'audio_url', 'duration', 'sort_order', 'is_active']
+    ),
+
+  deleteAudioTrack: remove('audio_tracks'),
+
+  async reorderAudioTracks(orderedIds: string[]) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (let i = 0; i < orderedIds.length; i++) {
+        await client.query(
+          'UPDATE audio_tracks SET sort_order = $1, updated_at = NOW() WHERE id = $2',
+          [i, orderedIds[i]]
+        );
+      }
+      await client.query('COMMIT');
+      return true;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
   // ---------- DASHBOARD (DEFENSIVE) ----------
   async getDashboardStats() {
     const safe = async (sql: string, fallback = 0): Promise<number> => {
@@ -1002,6 +1091,7 @@ export const dbOperations = {
       totalSubscribers,
       totalWhatsappClicks,
       smsSentThisMonth,
+      totalAudioTracks,
     ] = await Promise.all([
       safe('SELECT COUNT(*)::int AS v FROM packages'),
       safe('SELECT COUNT(*)::int AS v FROM packages WHERE is_active'),
@@ -1011,6 +1101,7 @@ export const dbOperations = {
       safe('SELECT COALESCE(SUM(whatsapp_clicks),0)::int AS v FROM packages'),
       safe(`SELECT COUNT(*)::int AS v FROM sms_logs
             WHERE sent_at >= date_trunc('month', NOW())`),
+      safe('SELECT COUNT(*)::int AS v FROM audio_tracks WHERE is_active'),
     ]);
 
     return {
@@ -1021,6 +1112,7 @@ export const dbOperations = {
       totalSubscribers,
       totalWhatsappClicks,
       smsSentThisMonth,
+      totalAudioTracks,
     };
   },
 };

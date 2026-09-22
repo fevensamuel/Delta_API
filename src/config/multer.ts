@@ -8,10 +8,11 @@ const videosPath = path.join(uploadPath, 'videos');
 const imagesPath = path.join(uploadPath, 'images');
 const packagesPath = path.join(uploadPath, 'packages');
 const teamPath = path.join(uploadPath, 'team');
-const officePath = path.join(uploadPath, 'office'); 
+const officePath = path.join(uploadPath, 'office');
+const audioPath = path.join(uploadPath, 'audio');
 
 // Ensure directories exist
-[videosPath, imagesPath, packagesPath, teamPath, officePath].forEach(dir => {
+[videosPath, imagesPath, packagesPath, teamPath, officePath, audioPath].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -20,28 +21,34 @@ const officePath = path.join(uploadPath, 'office');
 // Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Check if it's a team member image
     if (req.path && req.path.includes('/team')) {
       console.log(`👤 Saving team image to: ${teamPath}`);
       cb(null, teamPath);
-    } 
-    // Check if it's an office image
+    }
     else if (req.path && req.path.includes('/office')) {
       console.log(`🏢 Saving office image to: ${officePath}`);
       cb(null, officePath);
-    } 
+    }
     else if (req.path && req.path.includes('/packages')) {
       console.log(`📦 Saving package image to: ${packagesPath}`);
       cb(null, packagesPath);
     }
+    else if (req.path && req.path.includes('/audio')) {
+      console.log(`🎵 Saving audio to: ${audioPath}`);
+      cb(null, audioPath);
+    }
+    else if (file.mimetype.startsWith('audio/')) {
+      console.log(`🎵 Saving audio to: ${audioPath}`);
+      cb(null, audioPath);
+    }
     else if (file.mimetype.startsWith('video/')) {
       console.log(`🎬 Saving video to: ${videosPath}`);
       cb(null, videosPath);
-    } 
+    }
     else if (file.mimetype.startsWith('image/')) {
       console.log(`🖼️ Saving image to: ${imagesPath}`);
       cb(null, imagesPath);
-    } 
+    }
     else {
       console.log(`📁 Saving to default: ${imagesPath}`);
       cb(null, imagesPath);
@@ -56,17 +63,36 @@ const storage = multer.diskStorage({
   }
 });
 
-// Create multer instance
+// Main upload — allows images, videos, audio
 export const upload = multer({
   storage,
-  limits: { 
+  limits: {
     fileSize: 500 * 1024 * 1024
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+    if (
+      file.mimetype.startsWith('image/') ||
+      file.mimetype.startsWith('video/') ||
+      file.mimetype.startsWith('audio/')
+    ) {
       cb(null, true);
     } else {
-      cb(new Error('Only images and videos are allowed'));
+      cb(new Error('Only images, videos, and audio files are allowed'));
+    }
+  }
+});
+
+// Audio-only upload — stricter filter for the audio management feature
+export const audioUpload = multer({
+  storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100 MB max per audio file
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('audio/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only audio files are allowed'));
     }
   }
 });
@@ -85,6 +111,8 @@ export const bulkUpload = upload.array('files', 50);
 
 export const officeUpload = upload.single('image');
 
+export const audioFileUpload = audioUpload.single('audio');
+
 // Export paths for use in routes
 export const uploadPaths = {
   uploadPath,
@@ -92,5 +120,6 @@ export const uploadPaths = {
   imagesPath,
   packagesPath,
   teamPath,
-  officePath 
+  officePath,
+  audioPath
 };
