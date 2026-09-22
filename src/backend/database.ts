@@ -51,6 +51,30 @@ const json = (value: unknown, fallback: any[] = []): any[] => {
   return (value as any) ?? fallback;
 };
 
+// Numeric fields that PostgreSQL returns as strings (NUMERIC/BIGINT/etc.)
+const NUMERIC_FIELDS = [
+  // Package prices
+  'priceUsd', 'priceEtb', 'priceSar',
+  'priceUsdMin', 'priceUsdMax',
+  'priceEtbMin', 'priceEtbMax',
+  'priceSarMin', 'priceSarMax',
+  'basePriceUsd', 'basePriceEtb', 'basePriceSar',
+  // Package counts/ratings
+  'rating',
+  'whatsappClicks',
+  'reviewsCount',
+  'durationDays',
+  // Ordering
+  'sortOrder',
+  // Discounts
+  'discountedPriceUsd', 'discountedPriceEtb', 'discountedPriceSar',
+  'value',
+  'minPersons', 'maxPersons',
+  'ageMin', 'ageMax',
+  // Price logs
+  'previousPriceUsd', 'previousPriceEtb', 'previousPriceSar',
+];
+
 const mapRow = (row: any): any => {
   if (!row) return undefined;
   const mapped: any = {};
@@ -63,6 +87,13 @@ const mapRow = (row: any): any => {
   for (const field of ['createdAt', 'updatedAt', 'lastLogin', 'sentAt']) {
     if (mapped[field] instanceof Date) {
       mapped[field] = (mapped[field] as Date).toISOString();
+    }
+  }
+  // ✅ Convert PostgreSQL NUMERIC strings back to numbers
+  for (const field of NUMERIC_FIELDS) {
+    if (field in mapped && mapped[field] !== null && mapped[field] !== undefined) {
+      const num = Number(mapped[field]);
+      if (!Number.isNaN(num)) mapped[field] = num;
     }
   }
   return mapped;

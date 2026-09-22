@@ -59,6 +59,41 @@ var json = (value, fallback = []) => {
   }
   return value ?? fallback;
 };
+var NUMERIC_FIELDS = [
+  // Package prices
+  "priceUsd",
+  "priceEtb",
+  "priceSar",
+  "priceUsdMin",
+  "priceUsdMax",
+  "priceEtbMin",
+  "priceEtbMax",
+  "priceSarMin",
+  "priceSarMax",
+  "basePriceUsd",
+  "basePriceEtb",
+  "basePriceSar",
+  // Package counts/ratings
+  "rating",
+  "whatsappClicks",
+  "reviewsCount",
+  "durationDays",
+  // Ordering
+  "sortOrder",
+  // Discounts
+  "discountedPriceUsd",
+  "discountedPriceEtb",
+  "discountedPriceSar",
+  "value",
+  "minPersons",
+  "maxPersons",
+  "ageMin",
+  "ageMax",
+  // Price logs
+  "previousPriceUsd",
+  "previousPriceEtb",
+  "previousPriceSar"
+];
 var mapRow = (row) => {
   if (!row) return void 0;
   const mapped = {};
@@ -71,6 +106,12 @@ var mapRow = (row) => {
   for (const field of ["createdAt", "updatedAt", "lastLogin", "sentAt"]) {
     if (mapped[field] instanceof Date) {
       mapped[field] = mapped[field].toISOString();
+    }
+  }
+  for (const field of NUMERIC_FIELDS) {
+    if (field in mapped && mapped[field] !== null && mapped[field] !== void 0) {
+      const num = Number(mapped[field]);
+      if (!Number.isNaN(num)) mapped[field] = num;
     }
   }
   return mapped;
