@@ -60,7 +60,6 @@ var json = (value, fallback = []) => {
   return value ?? fallback;
 };
 var NUMERIC_FIELDS = [
-  // Package prices
   "priceUsd",
   "priceEtb",
   "priceSar",
@@ -73,14 +72,11 @@ var NUMERIC_FIELDS = [
   "basePriceUsd",
   "basePriceEtb",
   "basePriceSar",
-  // Package counts/ratings
   "rating",
   "whatsappClicks",
   "reviewsCount",
   "durationDays",
-  // Ordering
   "sortOrder",
-  // Discounts
   "discountedPriceUsd",
   "discountedPriceEtb",
   "discountedPriceSar",
@@ -89,12 +85,11 @@ var NUMERIC_FIELDS = [
   "maxPersons",
   "ageMin",
   "ageMax",
-  // Price logs
   "previousPriceUsd",
   "previousPriceEtb",
   "previousPriceSar",
-  // Audio
-  "duration"
+  "duration",
+  "passengers"
 ];
 var mapRow = (row) => {
   if (!row) return void 0;
@@ -324,6 +319,25 @@ async function createTables(client) {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS flight_inquiries (
+      id TEXT PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT DEFAULT '',
+      from_city TEXT DEFAULT '',
+      destination TEXT DEFAULT '',
+      departure_date TEXT DEFAULT '',
+      return_date TEXT DEFAULT '',
+      trip_type TEXT DEFAULT 'One Way',
+      passengers INTEGER DEFAULT 1,
+      cabin_class TEXT DEFAULT 'Economy',
+      preferred_airline TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      status TEXT DEFAULT 'New',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
   await client.query(`
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
@@ -410,6 +424,18 @@ async function createTables(client) {
     ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0;
     ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
     ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS from_city TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS destination TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS departure_date TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS return_date TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS trip_type TEXT DEFAULT 'One Way';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS passengers INTEGER DEFAULT 1;
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS cabin_class TEXT DEFAULT 'Economy';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS preferred_airline TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
   `);
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
   await client.query(`
@@ -423,6 +449,8 @@ async function createTables(client) {
     UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE contact_settings SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE audio_tracks SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE flight_inquiries SET status = 'New' WHERE status IS NULL;
+    UPDATE flight_inquiries SET trip_type = 'One Way' WHERE trip_type IS NULL;
   `);
   await client.query(`
     ALTER TABLE packages ALTER COLUMN is_active SET DEFAULT TRUE;
@@ -435,6 +463,8 @@ async function createTables(client) {
     ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE contact_settings ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE audio_tracks ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE flight_inquiries ALTER COLUMN status SET DEFAULT 'New';
+    ALTER TABLE flight_inquiries ALTER COLUMN trip_type SET DEFAULT 'One Way';
   `);
 }
 async function initDatabase() {
@@ -728,6 +758,78 @@ var dbOperations = {
     const result = await pool.query("DELETE FROM inquiries WHERE id=ANY($1::text[])", [ids]);
     return result.rowCount || 0;
   },
+  // ---------- FLIGHT INQUIRIES ----------
+  getAllFlightInquiries: list("flight_inquiries", "created_at DESC"),
+  findFlightInquiryById: find("flight_inquiries"),
+  createFlightInquiry: (data) => createEntity(
+    "flight_inquiries",
+    {
+      full_name: data.fullName,
+      phone: data.phone,
+      email: data.email || "",
+      from_city: data.fromCity || "",
+      destination: data.destination || "",
+      departure_date: data.departureDate || "",
+      return_date: data.returnDate || "",
+      trip_type: data.tripType || "One Way",
+      passengers: data.passengers !== void 0 ? Number(data.passengers) : 1,
+      cabin_class: data.cabinClass || "Economy",
+      preferred_airline: data.preferredAirline || "",
+      notes: data.notes || "",
+      status: data.status || "New"
+    },
+    [
+      "full_name",
+      "phone",
+      "email",
+      "from_city",
+      "destination",
+      "departure_date",
+      "return_date",
+      "trip_type",
+      "passengers",
+      "cabin_class",
+      "preferred_airline",
+      "notes",
+      "status"
+    ],
+    "flight"
+  ),
+  updateFlightInquiry: (entityId, data) => updateEntity(
+    "flight_inquiries",
+    entityId,
+    {
+      full_name: data.fullName,
+      phone: data.phone,
+      email: data.email,
+      from_city: data.fromCity,
+      destination: data.destination,
+      departure_date: data.departureDate,
+      return_date: data.returnDate,
+      trip_type: data.tripType,
+      passengers: data.passengers !== void 0 ? Number(data.passengers) : void 0,
+      cabin_class: data.cabinClass,
+      preferred_airline: data.preferredAirline,
+      notes: data.notes,
+      status: data.status
+    },
+    [
+      "full_name",
+      "phone",
+      "email",
+      "from_city",
+      "destination",
+      "departure_date",
+      "return_date",
+      "trip_type",
+      "passengers",
+      "cabin_class",
+      "preferred_airline",
+      "notes",
+      "status"
+    ]
+  ),
+  deleteFlightInquiry: remove("flight_inquiries"),
   // ---------- FAQS ----------
   getAllFaqs: list("faqs"),
   getActiveFaqs: list("faqs", "created_at DESC", "is_active = TRUE"),
@@ -1022,7 +1124,8 @@ var dbOperations = {
       totalSubscribers,
       totalWhatsappClicks,
       smsSentThisMonth,
-      totalAudioTracks
+      totalAudioTracks,
+      totalFlightInquiries
     ] = await Promise.all([
       safe("SELECT COUNT(*)::int AS v FROM packages"),
       safe("SELECT COUNT(*)::int AS v FROM packages WHERE is_active"),
@@ -1032,7 +1135,8 @@ var dbOperations = {
       safe("SELECT COALESCE(SUM(whatsapp_clicks),0)::int AS v FROM packages"),
       safe(`SELECT COUNT(*)::int AS v FROM sms_logs
             WHERE sent_at >= date_trunc('month', NOW())`),
-      safe("SELECT COUNT(*)::int AS v FROM audio_tracks WHERE is_active")
+      safe("SELECT COUNT(*)::int AS v FROM audio_tracks WHERE is_active"),
+      safe("SELECT COUNT(*)::int AS v FROM flight_inquiries")
     ]);
     return {
       totalPackages,
@@ -1042,7 +1146,8 @@ var dbOperations = {
       totalSubscribers,
       totalWhatsappClicks,
       smsSentThisMonth,
-      totalAudioTracks
+      totalAudioTracks,
+      totalFlightInquiries
     };
   }
 };
@@ -2144,6 +2249,92 @@ apiRouter.delete(
     const item = await dbOperations.deleteAudioTrack(req.params.id);
     if (!item) return fail(res, "Audio track not found", 404);
     return send(res, { message: "Audio track deleted successfully" });
+  })
+);
+apiRouter.post(
+  "/flight-inquiries",
+  asyncRoute(async (req, res) => {
+    const { fullName, phone } = req.body || {};
+    if (!fullName || !phone) {
+      return fail(res, "Full name and phone are required", 400);
+    }
+    const inquiry = await dbOperations.createFlightInquiry({
+      fullName,
+      phone,
+      email: req.body.email || "",
+      fromCity: req.body.fromCity || "",
+      destination: req.body.destination || "",
+      departureDate: req.body.departureDate || "",
+      returnDate: req.body.returnDate || "",
+      tripType: req.body.tripType || (req.body.returnDate ? "Round Trip" : "One Way"),
+      passengers: req.body.passengers !== void 0 ? Number(req.body.passengers) : 1,
+      cabinClass: req.body.cabinClass || "Economy",
+      preferredAirline: req.body.preferredAirline || "",
+      notes: req.body.notes || "",
+      status: "New"
+    });
+    return send(res, inquiry, 201);
+  })
+);
+apiRouter.get(
+  "/admin/flight-inquiries",
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const data = await dbOperations.getAllFlightInquiries();
+    return res.json({ status: "success", success: true, count: data.length, data });
+  })
+);
+apiRouter.get(
+  "/admin/flight-inquiries/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.findFlightInquiryById(req.params.id);
+    if (!item) return fail(res, "Flight inquiry not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.post(
+  "/admin/flight-inquiries",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const { fullName, phone } = req.body || {};
+    if (!fullName || !phone) {
+      return fail(res, "Full name and phone are required", 400);
+    }
+    const inquiry = await dbOperations.createFlightInquiry({
+      fullName,
+      phone,
+      email: req.body.email || "",
+      fromCity: req.body.fromCity || "",
+      destination: req.body.destination || "",
+      departureDate: req.body.departureDate || "",
+      returnDate: req.body.returnDate || "",
+      tripType: req.body.tripType || (req.body.returnDate ? "Round Trip" : "One Way"),
+      passengers: req.body.passengers !== void 0 ? Number(req.body.passengers) : 1,
+      cabinClass: req.body.cabinClass || "Economy",
+      preferredAirline: req.body.preferredAirline || "",
+      notes: req.body.notes || "",
+      status: req.body.status || "New"
+    });
+    return send(res, inquiry, 201);
+  })
+);
+apiRouter.put(
+  "/admin/flight-inquiries/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.updateFlightInquiry(req.params.id, req.body);
+    if (!item) return fail(res, "Flight inquiry not found", 404);
+    return send(res, item);
+  })
+);
+apiRouter.delete(
+  "/admin/flight-inquiries/:id",
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await dbOperations.deleteFlightInquiry(req.params.id);
+    if (!item) return fail(res, "Flight inquiry not found", 404);
+    return send(res, { message: "Flight inquiry deleted successfully" });
   })
 );
 
@@ -3447,6 +3638,7 @@ async function startServer() {
           "GET /api/gallery",
           "POST /api/subscribers",
           "POST /api/inquiries",
+          "POST /api/flight-inquiries",
           "GET /api/exchange-rate",
           "GET /api/faqs",
           "GET /api/social-links",
@@ -3511,7 +3703,11 @@ async function startServer() {
           "PUT /api/admin/audio/:id",
           "PATCH /api/admin/audio/:id/status",
           "PATCH /api/admin/audio/reorder",
-          "DELETE /api/admin/audio/:id"
+          "DELETE /api/admin/audio/:id",
+          "GET /api/admin/flight-inquiries",
+          "POST /api/admin/flight-inquiries",
+          "PUT /api/admin/flight-inquiries/:id",
+          "DELETE /api/admin/flight-inquiries/:id"
         ]
       }
     });

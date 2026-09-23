@@ -181,6 +181,7 @@ async function startServer() {
           'GET /api/gallery',
           'POST /api/subscribers',
           'POST /api/inquiries',
+          'POST /api/flight-inquiries',
           'GET /api/exchange-rate',
           'GET /api/faqs',
           'GET /api/social-links',
@@ -246,6 +247,10 @@ async function startServer() {
           'PATCH /api/admin/audio/:id/status',
           'PATCH /api/admin/audio/reorder',
           'DELETE /api/admin/audio/:id',
+          'GET /api/admin/flight-inquiries',
+          'POST /api/admin/flight-inquiries',
+          'PUT /api/admin/flight-inquiries/:id',
+          'DELETE /api/admin/flight-inquiries/:id',
         ],
       },
     });

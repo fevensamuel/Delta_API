@@ -14,6 +14,7 @@ import type {
   OfficeImage,
   Testimonial,
   AudioTrack,
+  FlightInquiry,
 } from '../types.js';
 
 // ============================================================
@@ -52,30 +53,24 @@ const json = (value: unknown, fallback: any[] = []): any[] => {
   return (value as any) ?? fallback;
 };
 
-// Numeric fields that PostgreSQL returns as strings (NUMERIC/BIGINT/etc.)
 const NUMERIC_FIELDS = [
-  // Package prices
   'priceUsd', 'priceEtb', 'priceSar',
   'priceUsdMin', 'priceUsdMax',
   'priceEtbMin', 'priceEtbMax',
   'priceSarMin', 'priceSarMax',
   'basePriceUsd', 'basePriceEtb', 'basePriceSar',
-  // Package counts/ratings
   'rating',
   'whatsappClicks',
   'reviewsCount',
   'durationDays',
-  // Ordering
   'sortOrder',
-  // Discounts
   'discountedPriceUsd', 'discountedPriceEtb', 'discountedPriceSar',
   'value',
   'minPersons', 'maxPersons',
   'ageMin', 'ageMax',
-  // Price logs
   'previousPriceUsd', 'previousPriceEtb', 'previousPriceSar',
-  // Audio
   'duration',
+  'passengers',
 ];
 
 const mapRow = (row: any): any => {
@@ -92,7 +87,6 @@ const mapRow = (row: any): any => {
       mapped[field] = (mapped[field] as Date).toISOString();
     }
   }
-  // ✅ Convert PostgreSQL NUMERIC strings back to numbers
   for (const field of NUMERIC_FIELDS) {
     if (field in mapped && mapped[field] !== null && mapped[field] !== undefined) {
       const num = Number(mapped[field]);
@@ -317,9 +311,27 @@ async function createTables(client: PoolClient) {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS flight_inquiries (
+      id TEXT PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT DEFAULT '',
+      from_city TEXT DEFAULT '',
+      destination TEXT DEFAULT '',
+      departure_date TEXT DEFAULT '',
+      return_date TEXT DEFAULT '',
+      trip_type TEXT DEFAULT 'One Way',
+      passengers INTEGER DEFAULT 1,
+      cabin_class TEXT DEFAULT 'Economy',
+      preferred_airline TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      status TEXT DEFAULT 'New',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 
-  // Safe migrations
   await client.query(`
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
@@ -405,6 +417,18 @@ async function createTables(client: PoolClient) {
     ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0;
     ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
     ALTER TABLE audio_tracks ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS from_city TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS destination TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS departure_date TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS return_date TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS trip_type TEXT DEFAULT 'One Way';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS passengers INTEGER DEFAULT 1;
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS cabin_class TEXT DEFAULT 'Economy';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS preferred_airline TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
+    ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
   `);
 
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
@@ -420,6 +444,8 @@ async function createTables(client: PoolClient) {
     UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE contact_settings SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE audio_tracks SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE flight_inquiries SET status = 'New' WHERE status IS NULL;
+    UPDATE flight_inquiries SET trip_type = 'One Way' WHERE trip_type IS NULL;
   `);
 
   await client.query(`
@@ -433,6 +459,8 @@ async function createTables(client: PoolClient) {
     ALTER TABLE admin_users ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE contact_settings ALTER COLUMN is_active SET DEFAULT TRUE;
     ALTER TABLE audio_tracks ALTER COLUMN is_active SET DEFAULT TRUE;
+    ALTER TABLE flight_inquiries ALTER COLUMN status SET DEFAULT 'New';
+    ALTER TABLE flight_inquiries ALTER COLUMN trip_type SET DEFAULT 'One Way';
   `);
 }
 
@@ -765,6 +793,68 @@ export const dbOperations = {
     return result.rowCount || 0;
   },
 
+  // ---------- FLIGHT INQUIRIES ----------
+  getAllFlightInquiries: list('flight_inquiries', 'created_at DESC'),
+  findFlightInquiryById: find('flight_inquiries'),
+
+  createFlightInquiry: (data: any) =>
+    createEntity(
+      'flight_inquiries',
+      {
+        full_name: data.fullName,
+        phone: data.phone,
+        email: data.email || '',
+        from_city: data.fromCity || '',
+        destination: data.destination || '',
+        departure_date: data.departureDate || '',
+        return_date: data.returnDate || '',
+        trip_type: data.tripType || 'One Way',
+        passengers: data.passengers !== undefined ? Number(data.passengers) : 1,
+        cabin_class: data.cabinClass || 'Economy',
+        preferred_airline: data.preferredAirline || '',
+        notes: data.notes || '',
+        status: data.status || 'New',
+      },
+      [
+        'full_name', 'phone', 'email',
+        'from_city', 'destination',
+        'departure_date', 'return_date', 'trip_type',
+        'passengers', 'cabin_class', 'preferred_airline',
+        'notes', 'status',
+      ],
+      'flight'
+    ),
+
+  updateFlightInquiry: (entityId: string, data: any) =>
+    updateEntity(
+      'flight_inquiries',
+      entityId,
+      {
+        full_name: data.fullName,
+        phone: data.phone,
+        email: data.email,
+        from_city: data.fromCity,
+        destination: data.destination,
+        departure_date: data.departureDate,
+        return_date: data.returnDate,
+        trip_type: data.tripType,
+        passengers: data.passengers !== undefined ? Number(data.passengers) : undefined,
+        cabin_class: data.cabinClass,
+        preferred_airline: data.preferredAirline,
+        notes: data.notes,
+        status: data.status,
+      },
+      [
+        'full_name', 'phone', 'email',
+        'from_city', 'destination',
+        'departure_date', 'return_date', 'trip_type',
+        'passengers', 'cabin_class', 'preferred_airline',
+        'notes', 'status',
+      ]
+    ),
+
+  deleteFlightInquiry: remove('flight_inquiries'),
+
   // ---------- FAQS ----------
   getAllFaqs: list('faqs'),
   getActiveFaqs: list('faqs', 'created_at DESC', 'is_active = TRUE'),
@@ -1092,6 +1182,7 @@ export const dbOperations = {
       totalWhatsappClicks,
       smsSentThisMonth,
       totalAudioTracks,
+      totalFlightInquiries,
     ] = await Promise.all([
       safe('SELECT COUNT(*)::int AS v FROM packages'),
       safe('SELECT COUNT(*)::int AS v FROM packages WHERE is_active'),
@@ -1102,6 +1193,7 @@ export const dbOperations = {
       safe(`SELECT COUNT(*)::int AS v FROM sms_logs
             WHERE sent_at >= date_trunc('month', NOW())`),
       safe('SELECT COUNT(*)::int AS v FROM audio_tracks WHERE is_active'),
+      safe('SELECT COUNT(*)::int AS v FROM flight_inquiries'),
     ]);
 
     return {
@@ -1113,6 +1205,7 @@ export const dbOperations = {
       totalWhatsappClicks,
       smsSentThisMonth,
       totalAudioTracks,
+      totalFlightInquiries,
     };
   },
 };

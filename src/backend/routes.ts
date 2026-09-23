@@ -1086,3 +1086,109 @@ apiRouter.delete(
     return send(res, { message: 'Audio track deleted successfully' });
   })
 );
+
+// ============================================================
+// FLIGHT INQUIRIES (Flight Quote Requests)
+// ============================================================
+
+// Public — save a new flight inquiry from the website form
+apiRouter.post(
+  '/flight-inquiries',
+  asyncRoute(async (req, res) => {
+    const { fullName, phone } = req.body || {};
+    if (!fullName || !phone) {
+      return fail(res, 'Full name and phone are required', 400);
+    }
+
+    const inquiry = await db.createFlightInquiry({
+      fullName,
+      phone,
+      email: req.body.email || '',
+      fromCity: req.body.fromCity || '',
+      destination: req.body.destination || '',
+      departureDate: req.body.departureDate || '',
+      returnDate: req.body.returnDate || '',
+      tripType: req.body.tripType || (req.body.returnDate ? 'Round Trip' : 'One Way'),
+      passengers: req.body.passengers !== undefined ? Number(req.body.passengers) : 1,
+      cabinClass: req.body.cabinClass || 'Economy',
+      preferredAirline: req.body.preferredAirline || '',
+      notes: req.body.notes || '',
+      status: 'New',
+    });
+
+    return send(res, inquiry, 201);
+  })
+);
+
+// Admin — list all flight inquiries
+apiRouter.get(
+  '/admin/flight-inquiries',
+  authenticateJWT,
+  asyncRoute(async (_req, res) => {
+    const data = await db.getAllFlightInquiries();
+    return res.json({ status: 'success', success: true, count: data.length, data });
+  })
+);
+
+// Admin — get single
+apiRouter.get(
+  '/admin/flight-inquiries/:id',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await db.findFlightInquiryById(req.params.id);
+    if (!item) return fail(res, 'Flight inquiry not found', 404);
+    return send(res, item);
+  })
+);
+
+// Admin — create manually
+apiRouter.post(
+  '/admin/flight-inquiries',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const { fullName, phone } = req.body || {};
+    if (!fullName || !phone) {
+      return fail(res, 'Full name and phone are required', 400);
+    }
+
+    const inquiry = await db.createFlightInquiry({
+      fullName,
+      phone,
+      email: req.body.email || '',
+      fromCity: req.body.fromCity || '',
+      destination: req.body.destination || '',
+      departureDate: req.body.departureDate || '',
+      returnDate: req.body.returnDate || '',
+      tripType: req.body.tripType || (req.body.returnDate ? 'Round Trip' : 'One Way'),
+      passengers: req.body.passengers !== undefined ? Number(req.body.passengers) : 1,
+      cabinClass: req.body.cabinClass || 'Economy',
+      preferredAirline: req.body.preferredAirline || '',
+      notes: req.body.notes || '',
+      status: req.body.status || 'New',
+    });
+
+    return send(res, inquiry, 201);
+  })
+);
+
+// Admin — update
+apiRouter.put(
+  '/admin/flight-inquiries/:id',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await db.updateFlightInquiry(req.params.id, req.body);
+    if (!item) return fail(res, 'Flight inquiry not found', 404);
+    return send(res, item);
+  })
+);
+
+// Admin — delete
+apiRouter.delete(
+  '/admin/flight-inquiries/:id',
+  authenticateJWT,
+  asyncRoute(async (req, res) => {
+    const item = await db.deleteFlightInquiry(req.params.id);
+    if (!item) return fail(res, 'Flight inquiry not found', 404);
+    return send(res, { message: 'Flight inquiry deleted successfully' });
+  })
+);

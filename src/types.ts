@@ -1,16 +1,39 @@
 // src/types.ts
-export type Language = 'EN' | 'AR' | 'AM';
 
-export type Currency = 'USD' | 'ETB' | 'SAR';
+// ============================================================
+// ADMIN USER
+// ============================================================
 
-export type PageId = 
-  | 'home' 
-  | 'about' 
-  | 'packages' 
-  | 'hotels-flights' 
-  | 'gallery' 
-  | 'faqs'
-  | 'contact';
+/**
+ * Admin role — only two levels are supported.
+ * - Admin: full access to the admin panel.
+ * - Super Admin: reserved for the owner / highest-privilege account.
+ */
+export type AdminRole = 'Admin' | 'Super Admin';
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  email: string;
+  passwordHash: string;
+  role: AdminRole;
+  lastLogin: string | null;
+  isActive: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthTokenPayload {
+  id: string;
+  username: string;
+  email: string;
+  role: AdminRole;
+}
+
+// ============================================================
+// PACKAGES
+// ============================================================
 
 export type PackageCategory = 'Economy' | 'Standard' | 'Premium' | 'VIP';
 export type PriceType = 'single' | 'range' | 'perPerson';
@@ -20,14 +43,12 @@ export interface ItineraryDay {
   dayNumber: number;
   title: string;
   description: string;
-  titleEn?: string;
-  descriptionEn?: string;
+  image?: string;
 }
 
-// Person/Group pricing for per-person packages
 export interface PersonPrice {
   id: string;
-  label: string; // e.g., "Adult", "Child (6-12)", "Senior (60+)"
+  label: string;
   priceUsd: number;
   priceEtb: number;
   priceSar: number;
@@ -37,7 +58,6 @@ export interface PersonPrice {
   isActive: boolean;
 }
 
-// Discount structure
 export interface Discount {
   id: string;
   type: DiscountType;
@@ -48,56 +68,164 @@ export interface Discount {
   label: string;
   labelAr?: string;
   description?: string;
-  minPersons?: number; // For group/family discounts - minimum number of people
-  maxPersons?: number; // For group/family discounts - maximum number of people
-  ageGroup?: string; // For age-based discounts - e.g., "60+", "0-12", "13-17"
-  ageMin?: number; // For age-based discounts - minimum age
-  ageMax?: number; // For age-based discounts - maximum age
-  discountType: 'age' | 'group' | 'general'; // Type of discount
+  minPersons?: number;
+  maxPersons?: number;
+  ageGroup?: string;
+  ageMin?: number;
+  ageMax?: number;
+  discountType: 'age' | 'group' | 'general';
   isActive: boolean;
 }
 
-export interface PackageItem {
+export interface TravelPackage {
   id: string;
   titleEn: string;
   titleAr: string;
-  titleAm?: string;
-  category: PackageCategory;
-  price: number;
-  priceUsd?: number;
-  priceEtb?: number;
-  priceSar?: number;
+  titleAm: string;
+  category: string;
+
+  priceUsd: number;
+  priceEtb: number;
+  priceSar: number;
+  priceType: PriceType;
+
+  priceUsdMin?: number;
+  priceUsdMax?: number;
+  priceEtbMin?: number;
+  priceEtbMax?: number;
+  priceSarMin?: number;
+  priceSarMax?: number;
+
+  basePriceUsd?: number;
+  basePriceEtb?: number;
+  basePriceSar?: number;
+  persons?: PersonPrice[];
+
+  discounts?: Discount[];
+
   durationDays: number;
   departureCity: string;
   inclusions: string[];
-  exclusions?: string[];
-  rating: number;
-  reviewsCount: number;
-  featured?: boolean;
-  popular?: boolean;
-  image: string;
-  imageUrl?: string;
   availableDates: string[];
   itinerary: ItineraryDay[];
-  whatsappClicks?: number;
-  isActive?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  imageUrl: string;
+  isActive: boolean;
+  whatsappClicks: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
-// Standalone FAQ Item (no packageId)
+// ============================================================
+// GALLERY
+// ============================================================
+
+export interface GalleryItem {
+  id: string;
+  type: 'photo' | 'video';
+  titleEn: string;
+  titleAr: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  videoUrl: string;
+  duration: string;
+  location: string;
+  description: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// SUBSCRIBERS
+// ============================================================
+
+export interface Subscriber {
+  id: string;
+  phone: string;
+  email: string;
+  name: string;
+  channel: string;
+  packageInterestId: string | null;
+  optInStatus: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// INQUIRIES
+// ============================================================
+
+export type InquiryStatus = 'New' | 'Contacted' | 'Resolved';
+
+export interface Inquiry {
+  id: string;
+  fullName: string;
+  phone: string;
+  email: string;
+  subject: string;
+  message: string;
+  source: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// FLIGHT INQUIRIES
+// ============================================================
+
+export type FlightInquiryStatus = 'New' | 'Booked' | 'Cancelled';
+export type TripType = 'One Way' | 'Round Trip';
+
+export interface FlightInquiry {
+  id: string;
+  fullName: string;
+  phone: string;
+  email: string;
+  fromCity: string;
+  destination: string;
+  departureDate: string;
+  returnDate: string;
+  tripType: string;
+  passengers: number;
+  cabinClass: string;
+  preferredAirline: string;
+  notes: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// SMS
+// ============================================================
+
+export interface SmsLog {
+  id: string;
+  phone: string;
+  message: string;
+  status: string;
+  campaignName: string | null;
+  sentAt: string;
+}
+
+// ============================================================
+// FAQS
+// ============================================================
+
 export interface FAQItem {
   id: string;
   question: string;
   answer: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
-// Keep PackageFAQ for backward compatibility if needed
-export interface PackageFAQ {
-  id: string;
-  packageId: string;
-  questions: FAQItem[];
-}
+// ============================================================
+// SOCIAL LINKS
+// ============================================================
 
 export interface SocialLink {
   id: string;
@@ -105,7 +233,63 @@ export interface SocialLink {
   url: string;
   isActive: boolean;
   icon: string;
+  createdAt: string;
+  updatedAt: string;
 }
+
+// ============================================================
+// TEAM MEMBERS
+// ============================================================
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: string;
+  bio: string;
+  imageUrl: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// OFFICE IMAGES
+// ============================================================
+
+export interface OfficeImage {
+  id: string;
+  title: string;
+  imageUrl: string;
+  description: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// TESTIMONIALS
+// ============================================================
+
+export interface Testimonial {
+  id: string;
+  name: string;
+  location: string;
+  rating: number;
+  text: string;
+  textAr: string;
+  packageTaken: string;
+  date: string;
+  avatar: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// PRICE LOGS
+// ============================================================
 
 export interface PriceLog {
   id: string;
@@ -121,195 +305,9 @@ export interface PriceLog {
   updatedAt: string;
 }
 
-export interface SmsSubscriber {
-  id?: string;
-  phone: string;
-  email?: string;
-  channel?: string;
-  packageInterestId?: string;
-  subscribedAt?: string;
-}
-
-export interface InquiryForm {
-  fullName: string;
-  phone: string;
-  email?: string;
-  subject: string;
-  message: string;
-  source?: string;
-}
-
-export interface GalleryItem {
-  id: string;
-  titleEn: string;
-  titleAr: string;
-  type: 'photo' | 'video';
-  imageUrl: string;
-  thumbnailUrl?: string;
-  videoUrl?: string;
-  duration?: string;
-  location: string;
-  description: string;
-  isActive?: boolean;
-  sortOrder?: number;
-  uploadDate?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface Testimonial {
-  id: string;
-  name: string;
-  location: string;
-  rating: number;
-  text: string;
-  textAr?: string;
-  packageTaken?: string;
-  date: string;
-  avatar?: string;
-  isActive?: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Admin Types
-export interface AdminUser {
-  id: string;
-  username: string;
-  email: string;
-  passwordHash: string;
-  role: AdminRole;
-  lastLogin: string | null;
-  isActive: boolean;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type AdminRole = 'Admin' | 'Manager' | 'Editor' | 'Viewer';
-
-export interface AuthTokenPayload {
-  id: string;
-  username: string;
-  email: string;
-  role: AdminRole;
-}
-
-// Inquiry Types
-export interface Inquiry {
-  id: string;
-  fullName: string;
-  phone: string;
-  email: string;
-  subject: string;
-  message: string;
-  status: InquiryStatus;
-  source: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type InquiryStatus = 'New' | 'Contacted' | 'Resolved';
-
-// Subscriber Types
-export interface Subscriber {
-  id: string;
-  phone: string;
-  email: string;
-  name: string;
-  channel: string;
-  packageInterestId: string | null;
-  optInStatus: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// SmsLog Types
-export interface SmsLog {
-  id: string;
-  phone: string;
-  message: string;
-  status: string;
-  campaignName: string;
-  sentAt: string;
-}
-
-// TravelPackage Types - UPDATED with new pricing
-export interface TravelPackage {
-  id: string;
-  titleEn: string;
-  titleAr: string;
-  titleAm: string;
-  category: PackageCategory;
-  
-  // Main pricing
-  priceUsd: number;
-  priceEtb: number;
-  priceSar: number;
-  priceType: PriceType; // 'single', 'range', 'perPerson'
-  
-  // Price range (if priceType === 'range')
-  priceUsdMin?: number;
-  priceUsdMax?: number;
-  priceEtbMin?: number;
-  priceEtbMax?: number;
-  priceSarMin?: number;
-  priceSarMax?: number;
-  
-  // Per person pricing (if priceType === 'perPerson')
-  basePriceUsd?: number;
-  basePriceEtb?: number;
-  basePriceSar?: number;
-  persons?: PersonPrice[];
-  
-  // Discounts
-  discounts?: Discount[];
-  
-  durationDays: number;
-  departureCity: string;
-  inclusions: string[];
-  availableDates: string[];
-  itinerary: ItineraryDay[];
-  imageUrl: string;
-  isActive: boolean;
-  whatsappClicks: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface TeamMember {
-  id: string;
-  name: string;
-  role: string;
-  bio: string;
-  imageUrl: string;
-  order: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface OfficeImage {
-  id: string;
-  title?: string;
-  imageUrl: string;
-  description?: string;
-  order?: number;
-  isActive?: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Person {
-  id: string;
-  name: string;
-  email?: string;
-  phone: string; 
-  age?: number;
-  gender?: 'Male' | 'Female' | 'Child';
-  createdAt?: string;
-  updatedAt?: string;
-}
+// ============================================================
+// AUDIO TRACKS
+// ============================================================
 
 export interface AudioTrack {
   id: string;
@@ -319,6 +317,20 @@ export interface AudioTrack {
   audioUrl: string;
   duration: number;
   sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================
+// CONTACT SETTINGS
+// ============================================================
+
+export interface ContactSettings {
+  id: number;
+  whatsappNumber: string;
+  phoneNumber: string;
+  smsNumber: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
