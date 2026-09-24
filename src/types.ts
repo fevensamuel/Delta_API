@@ -1,15 +1,15 @@
 // src/types.ts
 
 // ============================================================
-// ADMIN USER
+// ADMIN USERS
 // ============================================================
 
 /**
- * Admin role — only two levels are supported.
- * - Admin: full access to the admin panel.
- * - Super Admin: reserved for the owner / highest-privilege account.
+ * Admin role — only two levels:
+ * - SuperAdmin: full access; can manage other admins.
+ * - Admin: access is limited to the pages/permissions granted by a SuperAdmin.
  */
-export type AdminRole = 'Admin' | 'Super Admin';
+export type AdminRole = 'SuperAdmin' | 'Admin';
 
 export interface AdminUser {
   id: string;
@@ -17,6 +17,7 @@ export interface AdminUser {
   email: string;
   passwordHash: string;
   role: AdminRole;
+  permissions: string[];
   lastLogin: string | null;
   isActive: boolean;
   status: string;

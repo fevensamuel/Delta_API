@@ -5,27 +5,3 @@ node_modules/
 *.log
 .DS_Store
 uploads/
-data.json
-
-# Backup files
-*.bak
-*.bak1
-*.bak2
-*.old
-db_json.ts
-
-# Vite frontend artifacts (backend doesn't need these)
-dist/index.html
-dist/assets/
-dist/server.cjs.map
-
-# Frontend files (backend-only repo)
-src/App.tsx
-src/main.tsx
-src/index.css
-src/components/
-
-# Old stuff
-migrations/
-curl
-uploads/

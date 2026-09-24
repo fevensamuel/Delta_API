@@ -79,7 +79,9 @@ const mapRow = (row: any): any => {
   for (const [key, value] of Object.entries(row)) {
     mapped[key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
-  for (const field of ['inclusions', 'availableDates', 'itinerary', 'discounts', 'persons']) {
+  for (const field of [
+    'inclusions', 'availableDates', 'itinerary', 'discounts', 'persons', 'permissions',
+  ]) {
     if (field in mapped) mapped[field] = json(mapped[field]);
   }
   for (const field of ['createdAt', 'updatedAt', 'lastLogin', 'sentAt']) {
@@ -126,6 +128,7 @@ async function createTables(client: PoolClient) {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT DEFAULT 'Admin',
+      permissions JSONB DEFAULT '[]'::jsonb,
       last_login TIMESTAMPTZ,
       is_active BOOLEAN DEFAULT TRUE,
       status TEXT DEFAULT 'Active',
@@ -332,7 +335,13 @@ async function createTables(client: PoolClient) {
     );
   `);
 
+  // Safe migrations
   await client.query(`
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS title_am TEXT DEFAULT '';
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_etb NUMERIC;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS price_sar NUMERIC;
@@ -403,10 +412,6 @@ async function createTables(client: PoolClient) {
     ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
     ALTER TABLE price_logs ADD COLUMN IF NOT EXISTS updated_by TEXT DEFAULT 'Admin';
 
-    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
-    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
-    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
-
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS whatsapp_number TEXT DEFAULT '+251910136747';
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS phone_number TEXT DEFAULT '+251910136747';
     ALTER TABLE contact_settings ADD COLUMN IF NOT EXISTS sms_number TEXT DEFAULT '+251910136747';
@@ -442,6 +447,7 @@ async function createTables(client: PoolClient) {
     UPDATE office_images SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE testimonials SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE admin_users SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE admin_users SET permissions = '[]'::jsonb WHERE permissions IS NULL;
     UPDATE contact_settings SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE audio_tracks SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE flight_inquiries SET status = 'New' WHERE status IS NULL;
@@ -476,8 +482,8 @@ export async function initDatabase(): Promise<void> {
     if (Number(existingAdmins.rows[0].count) === 0) {
       const passwordHash = await bcrypt.hash('Password_Admin@1526', 10);
       await client.query(
-        `INSERT INTO admin_users (id, username, email, password_hash, role, is_active, status)
-         VALUES ($1, $2, $3, $4, 'Admin', TRUE, 'Active')
+        `INSERT INTO admin_users (id, username, email, password_hash, role, permissions, is_active, status)
+         VALUES ($1, $2, $3, $4, 'Admin', '[]'::jsonb, TRUE, 'Active')
          ON CONFLICT (username) DO NOTHING`,
         ['usr-1', 'adminUser', 'admin@deltatravel.com', passwordHash]
       );
@@ -566,6 +572,29 @@ const packageData = (data: any) =>
       const camel = field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
       let value = data[camel];
       if (['inclusions', 'availableDates', 'itinerary', 'discounts', 'persons'].includes(camel)) {
+        value = JSON.stringify(value ?? []);
+      }
+      if (camel === 'isActive' && (value === undefined || value === null)) {
+        value = true;
+      }
+      return [field, value];
+    })
+  );
+
+// ============================================================
+// ADMIN USER FIELD MAPPING
+// ============================================================
+const adminUserFields = [
+  'username', 'email', 'password_hash', 'role', 'permissions',
+  'last_login', 'is_active', 'status',
+];
+
+const adminUserData = (data: any) =>
+  Object.fromEntries(
+    adminUserFields.map((field) => {
+      const camel = field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      let value = data[camel];
+      if (camel === 'permissions') {
         value = JSON.stringify(value ?? []);
       }
       if (camel === 'isActive' && (value === undefined || value === null)) {
@@ -1019,10 +1048,12 @@ export const dbOperations = {
       {
         ...data,
         password_hash: data.passwordHash,
+        role: data.role || 'Admin',
+        permissions: Array.isArray(data.permissions) ? data.permissions : [],
         is_active: data.isActive,
         last_login: data.lastLogin,
       },
-      ['username', 'email', 'password_hash', 'role', 'last_login', 'is_active', 'status'],
+      adminUserFields,
       'usr'
     ),
 
@@ -1030,8 +1061,16 @@ export const dbOperations = {
     updateEntity(
       'admin_users',
       entityId,
-      { ...data, password_hash: data.passwordHash, is_active: data.isActive },
-      ['username', 'email', 'password_hash', 'role', 'is_active', 'status']
+      {
+        username: data.username,
+        email: data.email,
+        password_hash: data.passwordHash,
+        role: data.role,
+        permissions: data.permissions !== undefined ? data.permissions : undefined,
+        is_active: data.isActive,
+        status: data.status,
+      },
+      ['username', 'email', 'password_hash', 'role', 'permissions', 'is_active', 'status']
     ),
 
   deleteAdminUser: remove('admin_users'),
@@ -1043,6 +1082,24 @@ export const dbOperations = {
         [entityId]
       )
     ),
+
+  async updateAdminPermissions(entityId: string, permissions: string[]) {
+    return one(
+      await pool.query(
+        `UPDATE admin_users SET permissions = $1::jsonb, updated_at = NOW() WHERE id = $2 RETURNING *`,
+        [JSON.stringify(permissions ?? []), entityId]
+      )
+    );
+  },
+
+  async updateAdminStatus(entityId: string, isActive: boolean) {
+    return one(
+      await pool.query(
+        `UPDATE admin_users SET is_active = $1, status = $2, updated_at = NOW() WHERE id = $3 RETURNING *`,
+        [isActive, isActive ? 'Active' : 'Inactive', entityId]
+      )
+    );
+  },
 
   // ---------- CONTACT SETTINGS ----------
   async getContactSettings() {

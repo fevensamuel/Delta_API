@@ -11,7 +11,13 @@ import {
   packageUpload,
   audioFileUpload,
 } from '../config/multer.js';
-import { authenticateJWT, AuthenticatedRequest } from './middleware.js';
+import {
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission,
+  requireSuperAdmin,
+  AuthenticatedRequest,
+} from './middleware.js';
 
 export const apiRouter = Router();
 const JWT_SECRET =
@@ -57,6 +63,54 @@ const fileUrl = (req: Request, field: string, fallback = '') => {
 };
 
 // ============================================================
+// PERMISSION KEY WHITELIST
+// ============================================================
+// Must stay in sync with Delta-Admin/src/config/permissions.ts.
+// Any permission key outside this list is rejected on write — prevents
+// the client from inventing arbitrary permission keys.
+const VALID_PERMISSION_KEYS = new Set<string>([
+  'dashboard',
+  'packages',
+  'gallery',
+  'inquiries',
+  'flight-inquiries',
+  'subscribers',
+  'sms',
+  'leads',
+  'settings.contact',
+  'settings.social',
+  'settings.audio',
+  'settings.team-members',
+  'settings.office-images',
+  'settings.testimonials',
+  'settings.faqs',
+  'settings.price-logs',
+]);
+
+const sanitizePermissions = (input: any): string[] => {
+  if (!Array.isArray(input)) return [];
+  return Array.from(
+    new Set(input.filter((k) => typeof k === 'string' && VALID_PERMISSION_KEYS.has(k)))
+  );
+};
+
+// ============================================================
+// RESPONSE SHAPER — never leak password hashes
+// ============================================================
+const shapeAdmin = (user: any) => ({
+  id: user.id,
+  username: user.username,
+  email: user.email,
+  role: user.role,
+  permissions: Array.isArray(user.permissions) ? user.permissions : [],
+  isActive: user.isActive !== false,
+  status: user.status || 'Active',
+  lastLogin: user.lastLogin || null,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+});
+
+// ============================================================
 // AUTH
 // ============================================================
 async function login(req: Request, res: Response) {
@@ -88,15 +142,20 @@ async function login(req: Request, res: Response) {
     { expiresIn: '24h' }
   );
 
+  // ✅ Return the full admin shape the frontend expects, including role
+  //    and permissions (SuperAdmins always get the whole permission list).
+  const isSuper = user.role === 'SuperAdmin';
+  const permissions = isSuper
+    ? Array.from(VALID_PERMISSION_KEYS)
+    : Array.isArray(user.permissions)
+    ? user.permissions
+    : [];
+
   return send(res, {
     token,
     user: {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      isActive: user.isActive,
-      status: user.status,
+      ...shapeAdmin(user),
+      permissions,
     },
   });
 }
@@ -106,60 +165,213 @@ apiRouter.post(['/login', '/admin/login', '/auth/login', '/admin/auth/login'], l
 apiRouter.get(
   ['/admin/me', '/admin/auth/me'],
   authenticateJWT,
+  loadAdminContext,
   asyncRoute(async (req: AuthenticatedRequest, res) => {
-    const user = req.user && (await db.findAdminUserById(req.user.id));
-    if (!user) return fail(res, 'User not found', 404);
+    const admin = req.freshAdmin!;
+    const isSuper = admin.role === 'SuperAdmin';
     return send(res, {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      isActive: user.isActive,
-      status: user.status,
+      id: admin.id,
+      username: admin.username,
+      email: admin.email,
+      role: admin.role,
+      permissions: isSuper ? Array.from(VALID_PERMISSION_KEYS) : admin.permissions,
+      isActive: admin.isActive,
     });
   })
 );
 
-// Admin users management
+// ============================================================
+// ADMIN USERS MANAGEMENT — SuperAdmin only
+// ============================================================
 apiRouter.get(
   '/admin/users',
   authenticateJWT,
-  asyncRoute(async (_req, res) => send(res, await db.getAllAdminUsers()))
+  loadAdminContext,
+  requireSuperAdmin,
+  asyncRoute(async (_req, res) => {
+    const users = await db.getAllAdminUsers();
+    return send(res, users.map(shapeAdmin));
+  })
 );
 
 apiRouter.post(
   '/admin/users',
   authenticateJWT,
+  loadAdminContext,
+  requireSuperAdmin,
   asyncRoute(async (req, res) => {
-    if (!req.body.username || !req.body.email || !req.body.password) {
+    const { username, email, password, role, permissions } = req.body || {};
+
+    if (!username || !email || !password) {
       return fail(res, 'Username, email and password are required', 400);
     }
-    const passwordHash = await bcrypt.hash(req.body.password, 10);
-    return send(res, await db.createAdminUser({ ...req.body, passwordHash }), 201);
+    if (String(password).length < 6) {
+      return fail(res, 'Password must be at least 6 characters', 400);
+    }
+    if (role && !['Admin', 'SuperAdmin'].includes(role)) {
+      return fail(res, 'Role must be "Admin" or "SuperAdmin"', 400);
+    }
+
+    const existingUsername = await db.findAdminUserByUsername(username);
+    if (existingUsername) {
+      return fail(res, 'Username already exists', 409);
+    }
+    const existingEmail = await db.findAdminUserByEmail(email);
+    if (existingEmail) {
+      return fail(res, 'Email already exists', 409);
+    }
+
+    const finalRole = role === 'SuperAdmin' ? 'SuperAdmin' : 'Admin';
+    const finalPermissions =
+      finalRole === 'SuperAdmin' ? Array.from(VALID_PERMISSION_KEYS) : sanitizePermissions(permissions);
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const created = await db.createAdminUser({
+      username: String(username).trim(),
+      email: String(email).trim(),
+      passwordHash,
+      role: finalRole,
+      permissions: finalPermissions,
+      isActive: true,
+    });
+
+    return send(res, shapeAdmin(created), 201);
   })
 );
 
 apiRouter.put(
   '/admin/users/:id',
   authenticateJWT,
-  asyncRoute(async (req, res) => {
-    const data = { ...req.body };
-    if (data.password) {
-      data.passwordHash = await bcrypt.hash(data.password, 10);
-      delete data.password;
+  loadAdminContext,
+  requireSuperAdmin,
+  asyncRoute(async (req: AuthenticatedRequest, res) => {
+    const target = await db.findAdminUserById(req.params.id);
+    if (!target) return fail(res, 'Admin user not found', 404);
+
+    const data: any = {};
+
+    if (req.body.username !== undefined) {
+      const newUsername = String(req.body.username).trim();
+      if (newUsername && newUsername.toLowerCase() !== target.username.toLowerCase()) {
+        const dup = await db.findAdminUserByUsername(newUsername);
+        if (dup && dup.id !== target.id) {
+          return fail(res, 'Username already exists', 409);
+        }
+        data.username = newUsername;
+      }
     }
-    const item = await db.updateAdminUser(req.params.id, data);
-    if (!item) return fail(res, 'Admin user not found', 404);
-    return send(res, item);
+    if (req.body.email !== undefined) {
+      const newEmail = String(req.body.email).trim();
+      if (newEmail && newEmail.toLowerCase() !== target.email.toLowerCase()) {
+        const dup = await db.findAdminUserByEmail(newEmail);
+        if (dup && dup.id !== target.id) {
+          return fail(res, 'Email already exists', 409);
+        }
+        data.email = newEmail;
+      }
+    }
+    if (req.body.password) {
+      if (String(req.body.password).length < 6) {
+        return fail(res, 'Password must be at least 6 characters', 400);
+      }
+      data.passwordHash = await bcrypt.hash(req.body.password, 10);
+    }
+
+    // Role change — only allowed if the requester is SuperAdmin (already
+    // enforced) and we don't strip the last remaining SuperAdmin.
+    if (req.body.role !== undefined && ['Admin', 'SuperAdmin'].includes(req.body.role)) {
+      const nextRole = req.body.role;
+      if (target.role === 'SuperAdmin' && nextRole === 'Admin') {
+        const all = await db.getAllAdminUsers();
+        const superCount = all.filter((u) => u.role === 'SuperAdmin').length;
+        if (superCount <= 1) {
+          return fail(res, 'Cannot demote the last remaining Super Admin.', 400);
+        }
+      }
+      data.role = nextRole;
+    }
+
+    if (req.body.permissions !== undefined) {
+      data.permissions =
+        (data.role || target.role) === 'SuperAdmin'
+          ? Array.from(VALID_PERMISSION_KEYS)
+          : sanitizePermissions(req.body.permissions);
+    }
+
+    if (req.body.isActive !== undefined) {
+      // Prevent a SuperAdmin from deactivating themselves
+      if (target.id === req.freshAdmin!.id && req.body.isActive === false) {
+        return fail(res, "You can't deactivate your own account.", 400);
+      }
+      data.isActive = bool(req.body.isActive, true);
+      data.status = data.isActive ? 'Active' : 'Inactive';
+    }
+
+    const updated = await db.updateAdminUser(target.id, data);
+    return send(res, shapeAdmin(updated));
+  })
+);
+
+apiRouter.put(
+  '/admin/users/:id/permissions',
+  authenticateJWT,
+  loadAdminContext,
+  requireSuperAdmin,
+  asyncRoute(async (req, res) => {
+    const target = await db.findAdminUserById(req.params.id);
+    if (!target) return fail(res, 'Admin user not found', 404);
+
+    if (target.role === 'SuperAdmin') {
+      return fail(res, 'Super Admins always have full access. Demote first.', 400);
+    }
+
+    const perms = sanitizePermissions(req.body.permissions);
+    const updated = await db.updateAdminPermissions(target.id, perms);
+    return send(res, shapeAdmin(updated));
+  })
+);
+
+apiRouter.put(
+  '/admin/users/:id/status',
+  authenticateJWT,
+  loadAdminContext,
+  requireSuperAdmin,
+  asyncRoute(async (req: AuthenticatedRequest, res) => {
+    const target = await db.findAdminUserById(req.params.id);
+    if (!target) return fail(res, 'Admin user not found', 404);
+
+    if (target.id === req.freshAdmin!.id && req.body.isActive === false) {
+      return fail(res, "You can't deactivate your own account.", 400);
+    }
+
+    const isActive = bool(req.body.isActive, true);
+    const updated = await db.updateAdminStatus(target.id, isActive);
+    return send(res, shapeAdmin(updated));
   })
 );
 
 apiRouter.delete(
   '/admin/users/:id',
   authenticateJWT,
-  asyncRoute(async (req, res) => {
-    const item = await db.deleteAdminUser(req.params.id);
-    if (!item) return fail(res, 'Admin user not found', 404);
+  loadAdminContext,
+  requireSuperAdmin,
+  asyncRoute(async (req: AuthenticatedRequest, res) => {
+    const target = await db.findAdminUserById(req.params.id);
+    if (!target) return fail(res, 'Admin user not found', 404);
+
+    if (target.id === req.freshAdmin!.id) {
+      return fail(res, "You can't delete your own account.", 400);
+    }
+
+    if (target.role === 'SuperAdmin') {
+      const all = await db.getAllAdminUsers();
+      const superCount = all.filter((u) => u.role === 'SuperAdmin').length;
+      if (superCount <= 1) {
+        return fail(res, 'Cannot delete the last remaining Super Admin.', 400);
+      }
+    }
+
+    await db.deleteAdminUser(target.id);
     return send(res, { message: 'Admin user deleted successfully' });
   })
 );
@@ -175,14 +387,20 @@ apiRouter.get(
 apiRouter.get(
   '/admin/exchange-rate',
   authenticateJWT,
+  loadAdminContext,
   asyncRoute(async (_req, res) => send(res, await getExchangeRate()))
 );
 
-apiRouter.post('/admin/exchange-rate', authenticateJWT, (req, res) => {
-  const rate = Number(req.body.rate);
-  if (!rate || rate <= 0) return fail(res, 'Valid rate number is required', 400);
-  return send(res, setAdminOverrideRate(rate));
-});
+apiRouter.post(
+  '/admin/exchange-rate',
+  authenticateJWT,
+  loadAdminContext,
+  (req, res) => {
+    const rate = Number(req.body.rate);
+    if (!rate || rate <= 0) return fail(res, 'Valid rate number is required', 400);
+    return send(res, setAdminOverrideRate(rate));
+  }
+);
 
 // ============================================================
 // SOCIAL LINKS
@@ -195,12 +413,16 @@ apiRouter.get(
 apiRouter.get(
   '/admin/social-links',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.social'),
   asyncRoute(async (_req, res) => send(res, await db.getAllSocialLinks()))
 );
 
 apiRouter.post(
   '/admin/social-links',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.social'),
   asyncRoute(async (req, res) => {
     if (!req.body.platform || !req.body.url) {
       return fail(res, 'Platform and URL are required', 400);
@@ -220,6 +442,8 @@ apiRouter.post(
 apiRouter.put(
   '/admin/social-links/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.social'),
   asyncRoute(async (req, res) => {
     const item = await db.updateSocialLink(req.params.id, req.body);
     if (!item) return fail(res, 'Social Media link not found', 404);
@@ -230,6 +454,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/social-links/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.social'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteSocialLink(req.params.id);
     if (!item) return fail(res, 'Social Media link not found', 404);
@@ -240,8 +466,6 @@ apiRouter.delete(
 // ============================================================
 // CONTACT SETTINGS
 // ============================================================
-
-// Public — get active contact settings (returns camelCase for frontend)
 apiRouter.get(
   '/contact-settings',
   asyncRoute(async (_req, res) => {
@@ -261,10 +485,11 @@ apiRouter.get(
   })
 );
 
-// Admin — get full settings
 apiRouter.get(
   '/admin/contact-settings',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.contact'),
   asyncRoute(async (_req, res) => {
     const settings = await db.getContactSettings();
     return send(res, {
@@ -279,10 +504,11 @@ apiRouter.get(
   })
 );
 
-// Admin — update settings
 apiRouter.put(
   '/admin/contact-settings',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.contact'),
   asyncRoute(async (req, res) => {
     const updated = await db.updateContactSettings(req.body);
     return send(res, {
@@ -311,6 +537,8 @@ apiRouter.get(
 apiRouter.get(
   '/admin/faqs',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.faqs'),
   asyncRoute(async (_req, res) => {
     const data = await db.getAllFaqs();
     return res.json({ status: 'success', success: true, count: data.length, data });
@@ -320,6 +548,8 @@ apiRouter.get(
 apiRouter.post(
   '/admin/faqs',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.faqs'),
   asyncRoute(async (req, res) => {
     if (!req.body.question || !req.body.answer) {
       return fail(res, 'Question and answer are required', 400);
@@ -331,6 +561,8 @@ apiRouter.post(
 apiRouter.put(
   '/admin/faqs/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.faqs'),
   asyncRoute(async (req, res) => {
     const item = await db.updateFaq(req.params.id, req.body);
     if (!item) return fail(res, 'FAQ not found', 404);
@@ -341,6 +573,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/faqs/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.faqs'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteFaq(req.params.id);
     if (!item) return fail(res, 'FAQ not found', 404);
@@ -411,6 +645,8 @@ apiRouter.post(
 apiRouter.get(
   '/admin/packages',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('packages'),
   asyncRoute(async (_req, res) => {
     const data = await db.getAllPackages();
     return res.json({ status: 'success', success: true, count: data.length, data });
@@ -420,6 +656,8 @@ apiRouter.get(
 apiRouter.get(
   '/admin/packages/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('packages'),
   asyncRoute(async (req, res) => {
     const item = await db.findPackageById(req.params.id);
     if (!item) return fail(res, 'Package not found', 404);
@@ -430,6 +668,8 @@ apiRouter.get(
 apiRouter.post(
   '/admin/packages',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('packages'),
   packageUpload,
   asyncRoute(async (req, res) => {
     const data = await db.createPackage(packageInput(req.body, (req as any).file));
@@ -448,6 +688,8 @@ apiRouter.post(
 apiRouter.put(
   '/admin/packages/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('packages'),
   packageUpload,
   asyncRoute(async (req, res) => {
     const existing = await db.findPackageById(req.params.id);
@@ -464,6 +706,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/packages/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('packages'),
   asyncRoute(async (req, res) => {
     const item = await db.deletePackage(req.params.id);
     if (!item) return fail(res, 'Package not found', 404);
@@ -515,6 +759,8 @@ apiRouter.get(
 apiRouter.get(
   '/admin/gallery',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('gallery'),
   asyncRoute(async (req, res) => {
     let data: any[] = await db.getAllGalleryItems();
     if (req.query.type) {
@@ -527,6 +773,8 @@ apiRouter.get(
 apiRouter.post(
   '/admin/gallery',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('gallery'),
   galleryUploadFields,
   asyncRoute(async (req, res) =>
     send(res, await db.createGalleryItem(galleryInput(req.body, req.files)), 201)
@@ -536,6 +784,8 @@ apiRouter.post(
 apiRouter.post(
   '/admin/gallery/bulk',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('gallery'),
   bulkUpload,
   asyncRoute(async (req, res) => {
     const files = ((req as any).files || []) as Express.Multer.File[];
@@ -558,6 +808,8 @@ apiRouter.post(
 apiRouter.put(
   '/admin/gallery/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('gallery'),
   asyncRoute(async (req, res) => {
     const item = await db.updateGalleryItem(req.params.id, req.body);
     if (!item) return fail(res, 'Gallery item not found', 404);
@@ -568,6 +820,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/gallery/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('gallery'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteGalleryItem(req.params.id);
     if (!item) return fail(res, 'Gallery item not found', 404);
@@ -581,6 +835,8 @@ apiRouter.delete(
 apiRouter.get(
   '/admin/inquiries',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('inquiries'),
   asyncRoute(async (_req, res) => send(res, await db.getAllInquiries()))
 );
 
@@ -597,6 +853,8 @@ apiRouter.post(
 apiRouter.put(
   '/admin/inquiries/bulk-status',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('inquiries'),
   asyncRoute(async (req, res) =>
     send(
       res,
@@ -608,6 +866,8 @@ apiRouter.put(
 apiRouter.put(
   '/admin/inquiries/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('inquiries'),
   asyncRoute(async (req, res) => {
     const item = await db.updateInquiryStatus(req.params.id, req.body.status);
     if (!item) return fail(res, 'Inquiry not found', 404);
@@ -618,6 +878,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/inquiries/bulk-delete',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('inquiries'),
   asyncRoute(async (req, res) =>
     send(res, { deleted: await db.deleteManyInquiries(req.body.ids || []) })
   )
@@ -626,10 +888,121 @@ apiRouter.delete(
 apiRouter.delete(
   '/admin/inquiries/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('inquiries'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteInquiry(req.params.id);
     if (!item) return fail(res, 'Inquiry not found', 404);
     return send(res, { message: 'Inquiry deleted successfully' });
+  })
+);
+
+// ============================================================
+// FLIGHT INQUIRIES
+// ============================================================
+apiRouter.post(
+  '/flight-inquiries',
+  asyncRoute(async (req, res) => {
+    const { fullName, phone } = req.body || {};
+    if (!fullName || !phone) {
+      return fail(res, 'Full name and phone are required', 400);
+    }
+
+    const inquiry = await db.createFlightInquiry({
+      fullName,
+      phone,
+      email: req.body.email || '',
+      fromCity: req.body.fromCity || '',
+      destination: req.body.destination || '',
+      departureDate: req.body.departureDate || '',
+      returnDate: req.body.returnDate || '',
+      tripType: req.body.tripType || (req.body.returnDate ? 'Round Trip' : 'One Way'),
+      passengers: req.body.passengers !== undefined ? Number(req.body.passengers) : 1,
+      cabinClass: req.body.cabinClass || 'Economy',
+      preferredAirline: req.body.preferredAirline || '',
+      notes: req.body.notes || '',
+      status: 'New',
+    });
+
+    return send(res, inquiry, 201);
+  })
+);
+
+apiRouter.get(
+  '/admin/flight-inquiries',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('flight-inquiries'),
+  asyncRoute(async (_req, res) => {
+    const data = await db.getAllFlightInquiries();
+    return res.json({ status: 'success', success: true, count: data.length, data });
+  })
+);
+
+apiRouter.get(
+  '/admin/flight-inquiries/:id',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('flight-inquiries'),
+  asyncRoute(async (req, res) => {
+    const item = await db.findFlightInquiryById(req.params.id);
+    if (!item) return fail(res, 'Flight inquiry not found', 404);
+    return send(res, item);
+  })
+);
+
+apiRouter.post(
+  '/admin/flight-inquiries',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('flight-inquiries'),
+  asyncRoute(async (req, res) => {
+    const { fullName, phone } = req.body || {};
+    if (!fullName || !phone) {
+      return fail(res, 'Full name and phone are required', 400);
+    }
+
+    const inquiry = await db.createFlightInquiry({
+      fullName,
+      phone,
+      email: req.body.email || '',
+      fromCity: req.body.fromCity || '',
+      destination: req.body.destination || '',
+      departureDate: req.body.departureDate || '',
+      returnDate: req.body.returnDate || '',
+      tripType: req.body.tripType || (req.body.returnDate ? 'Round Trip' : 'One Way'),
+      passengers: req.body.passengers !== undefined ? Number(req.body.passengers) : 1,
+      cabinClass: req.body.cabinClass || 'Economy',
+      preferredAirline: req.body.preferredAirline || '',
+      notes: req.body.notes || '',
+      status: req.body.status || 'New',
+    });
+
+    return send(res, inquiry, 201);
+  })
+);
+
+apiRouter.put(
+  '/admin/flight-inquiries/:id',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('flight-inquiries'),
+  asyncRoute(async (req, res) => {
+    const item = await db.updateFlightInquiry(req.params.id, req.body);
+    if (!item) return fail(res, 'Flight inquiry not found', 404);
+    return send(res, item);
+  })
+);
+
+apiRouter.delete(
+  '/admin/flight-inquiries/:id',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('flight-inquiries'),
+  asyncRoute(async (req, res) => {
+    const item = await db.deleteFlightInquiry(req.params.id);
+    if (!item) return fail(res, 'Flight inquiry not found', 404);
+    return send(res, { message: 'Flight inquiry deleted successfully' });
   })
 );
 
@@ -639,12 +1012,16 @@ apiRouter.delete(
 apiRouter.get(
   '/admin/price-logs',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.price-logs'),
   asyncRoute(async (_req, res) => send(res, await db.getAllPriceLogs()))
 );
 
 apiRouter.post(
   '/admin/price-logs',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.price-logs'),
   asyncRoute(async (req, res) => send(res, await db.createPriceLog(req.body), 201))
 );
 
@@ -654,6 +1031,8 @@ apiRouter.post(
 apiRouter.post(
   '/admin/sms/campaign',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('sms'),
   asyncRoute(async (req, res) => {
     const message = String(req.body.message || '');
     if (!message) return fail(res, 'Message is required', 400);
@@ -693,8 +1072,8 @@ apiRouter.post(
 );
 
 const smsLogs = asyncRoute(async (_req, res) => send(res, await db.getAllSmsLogs()));
-apiRouter.get('/admin/sms/logs', authenticateJWT, smsLogs);
-apiRouter.get('/admin/sms/campaigns', authenticateJWT, smsLogs);
+apiRouter.get('/admin/sms/logs', authenticateJWT, loadAdminContext, requirePermission('sms'), smsLogs);
+apiRouter.get('/admin/sms/campaigns', authenticateJWT, loadAdminContext, requirePermission('sms'), smsLogs);
 
 // ============================================================
 // DASHBOARD
@@ -702,6 +1081,8 @@ apiRouter.get('/admin/sms/campaigns', authenticateJWT, smsLogs);
 apiRouter.get(
   '/admin/dashboard/stats',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('dashboard'),
   asyncRoute(async (_req, res) => send(res, await db.getDashboardStats()))
 );
 
@@ -719,12 +1100,16 @@ apiRouter.get(
 apiRouter.get(
   '/admin/team-members',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.team-members'),
   asyncRoute(async (_req, res) => send(res, await db.getAllTeamMembers()))
 );
 
 apiRouter.post(
   '/admin/team-members',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.team-members'),
   teamUpload,
   asyncRoute(async (req, res) => {
     const member = await db.createTeamMember({
@@ -742,6 +1127,8 @@ apiRouter.post(
 apiRouter.put(
   '/admin/team-members/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.team-members'),
   teamUpload,
   asyncRoute(async (req, res) => {
     const updateData: any = {
@@ -754,7 +1141,6 @@ apiRouter.put(
         req.body.isActive === undefined ? undefined : bool(req.body.isActive, true),
     };
 
-    // Remove undefined so updateEntity skips them
     Object.keys(updateData).forEach(
       (key) => updateData[key] === undefined && delete updateData[key]
     );
@@ -768,6 +1154,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/team-members/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.team-members'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteTeamMember(req.params.id);
     if (!item) return fail(res, 'Team member not found', 404);
@@ -786,12 +1174,16 @@ apiRouter.get(
 apiRouter.get(
   '/admin/office-images',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.office-images'),
   asyncRoute(async (_req, res) => send(res, await db.getAllOfficeImages()))
 );
 
 apiRouter.post(
   '/admin/office-images',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.office-images'),
   officeUpload,
   asyncRoute(async (req, res) => {
     const image = await db.createOfficeImage({
@@ -808,6 +1200,8 @@ apiRouter.post(
 apiRouter.put(
   '/admin/office-images/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.office-images'),
   officeUpload,
   asyncRoute(async (req, res) => {
     const updateData: any = {
@@ -832,6 +1226,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/office-images/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.office-images'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteOfficeImage(req.params.id);
     if (!item) return fail(res, 'Office image not found', 404);
@@ -850,18 +1246,24 @@ apiRouter.get(
 apiRouter.get(
   '/admin/testimonials',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.testimonials'),
   asyncRoute(async (_req, res) => send(res, await db.getAllTestimonials()))
 );
 
 apiRouter.post(
   '/admin/testimonials',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.testimonials'),
   asyncRoute(async (req, res) => send(res, await db.createTestimonial(req.body), 201))
 );
 
 apiRouter.put(
   '/admin/testimonials/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.testimonials'),
   asyncRoute(async (req, res) => {
     const item = await db.updateTestimonial(req.params.id, req.body);
     if (!item) return fail(res, 'Testimonial not found', 404);
@@ -872,6 +1274,8 @@ apiRouter.put(
 apiRouter.delete(
   '/admin/testimonials/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.testimonials'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteTestimonial(req.params.id);
     if (!item) return fail(res, 'Testimonial not found', 404);
@@ -885,6 +1289,8 @@ apiRouter.delete(
 apiRouter.get(
   '/admin/subscribers',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('subscribers'),
   asyncRoute(async (_req, res) => send(res, await db.getAllSubscribers()))
 );
 
@@ -899,13 +1305,16 @@ apiRouter.post(
 apiRouter.post(
   '/admin/subscribers',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('subscribers'),
   asyncRoute(async (req, res) => send(res, await db.createSubscriber(req.body), 201))
 );
 
-// ⚠️ BULK DELETE must be BEFORE the :id route
 apiRouter.delete(
   '/admin/subscribers/bulk-delete',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('subscribers'),
   asyncRoute(async (req, res) =>
     send(res, {
       deleted: await db.deleteSubscribers(req.body.ids || [], req.body.phones || []),
@@ -916,6 +1325,8 @@ apiRouter.delete(
 apiRouter.delete(
   '/admin/subscribers/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('subscribers'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteSubscriber(req.params.id);
     if (!item) return fail(res, 'Subscriber not found', 404);
@@ -926,6 +1337,8 @@ apiRouter.delete(
 apiRouter.put(
   '/admin/subscribers/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('subscribers'),
   asyncRoute(async (req, res) => {
     const item = await db.updateSubscriber(req.params.id, req.body);
     if (!item) return fail(res, 'Subscriber not found', 404);
@@ -936,16 +1349,16 @@ apiRouter.put(
 apiRouter.post(
   '/admin/subscribers/bulk',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('subscribers'),
   asyncRoute(async (req, res) =>
     send(res, await db.bulkImportSubscribers(req.body.subscribers || req.body), 201)
   )
 );
 
 // ============================================================
-// AUDIO TRACKS (Nasheed / Quran Player)
+// AUDIO TRACKS
 // ============================================================
-
-// Public — get all active tracks (ordered)
 apiRouter.get(
   '/audio',
   asyncRoute(async (_req, res) => {
@@ -954,20 +1367,22 @@ apiRouter.get(
   })
 );
 
-// Admin — get all tracks (including inactive)
 apiRouter.get(
   '/admin/audio',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   asyncRoute(async (_req, res) => {
     const data = await db.getAllAudioTracks();
     return res.json({ status: 'success', success: true, count: data.length, data });
   })
 );
 
-// Admin — get single track
 apiRouter.get(
   '/admin/audio/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   asyncRoute(async (req, res) => {
     const item = await db.findAudioTrackById(req.params.id);
     if (!item) return fail(res, 'Audio track not found', 404);
@@ -975,10 +1390,11 @@ apiRouter.get(
   })
 );
 
-// Admin — upload audio file → returns the URL
 apiRouter.post(
   '/admin/audio/upload',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   audioFileUpload,
   asyncRoute(async (req, res) => {
     const file = (req as any).file;
@@ -987,25 +1403,18 @@ apiRouter.post(
   })
 );
 
-// Admin — create track
 apiRouter.post(
   '/admin/audio',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   audioFileUpload,
   asyncRoute(async (req, res) => {
     const file = (req as any).file;
+    if (!req.body.titleEn) return fail(res, 'English title is required', 400);
 
-    if (!req.body.titleEn) {
-      return fail(res, 'English title is required', 400);
-    }
-
-    const audioUrl = file
-      ? `/uploads/audio/${file.filename}`
-      : req.body.audioUrl;
-
-    if (!audioUrl) {
-      return fail(res, 'Audio file or audioUrl is required', 400);
-    }
+    const audioUrl = file ? `/uploads/audio/${file.filename}` : req.body.audioUrl;
+    if (!audioUrl) return fail(res, 'Audio file or audioUrl is required', 400);
 
     const track = await db.createAudioTrack({
       titleEn: req.body.titleEn,
@@ -1021,10 +1430,11 @@ apiRouter.post(
   })
 );
 
-// Admin — update track
 apiRouter.put(
   '/admin/audio/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   audioFileUpload,
   asyncRoute(async (req, res) => {
     const file = (req as any).file;
@@ -1049,10 +1459,11 @@ apiRouter.put(
   })
 );
 
-// Admin — toggle active status
 apiRouter.patch(
   '/admin/audio/:id/status',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   asyncRoute(async (req, res) => {
     const item = await db.updateAudioTrack(req.params.id, {
       isActive: bool(req.body.isActive, true),
@@ -1062,10 +1473,11 @@ apiRouter.patch(
   })
 );
 
-// Admin — reorder tracks (body: { ids: string[] } in desired order)
 apiRouter.patch(
   '/admin/audio/reorder',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   asyncRoute(async (req, res) => {
     const ids: string[] = req.body.ids || [];
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -1076,119 +1488,14 @@ apiRouter.patch(
   })
 );
 
-// Admin — delete track
 apiRouter.delete(
   '/admin/audio/:id',
   authenticateJWT,
+  loadAdminContext,
+  requirePermission('settings.audio'),
   asyncRoute(async (req, res) => {
     const item = await db.deleteAudioTrack(req.params.id);
     if (!item) return fail(res, 'Audio track not found', 404);
     return send(res, { message: 'Audio track deleted successfully' });
-  })
-);
-
-// ============================================================
-// FLIGHT INQUIRIES (Flight Quote Requests)
-// ============================================================
-
-// Public — save a new flight inquiry from the website form
-apiRouter.post(
-  '/flight-inquiries',
-  asyncRoute(async (req, res) => {
-    const { fullName, phone } = req.body || {};
-    if (!fullName || !phone) {
-      return fail(res, 'Full name and phone are required', 400);
-    }
-
-    const inquiry = await db.createFlightInquiry({
-      fullName,
-      phone,
-      email: req.body.email || '',
-      fromCity: req.body.fromCity || '',
-      destination: req.body.destination || '',
-      departureDate: req.body.departureDate || '',
-      returnDate: req.body.returnDate || '',
-      tripType: req.body.tripType || (req.body.returnDate ? 'Round Trip' : 'One Way'),
-      passengers: req.body.passengers !== undefined ? Number(req.body.passengers) : 1,
-      cabinClass: req.body.cabinClass || 'Economy',
-      preferredAirline: req.body.preferredAirline || '',
-      notes: req.body.notes || '',
-      status: 'New',
-    });
-
-    return send(res, inquiry, 201);
-  })
-);
-
-// Admin — list all flight inquiries
-apiRouter.get(
-  '/admin/flight-inquiries',
-  authenticateJWT,
-  asyncRoute(async (_req, res) => {
-    const data = await db.getAllFlightInquiries();
-    return res.json({ status: 'success', success: true, count: data.length, data });
-  })
-);
-
-// Admin — get single
-apiRouter.get(
-  '/admin/flight-inquiries/:id',
-  authenticateJWT,
-  asyncRoute(async (req, res) => {
-    const item = await db.findFlightInquiryById(req.params.id);
-    if (!item) return fail(res, 'Flight inquiry not found', 404);
-    return send(res, item);
-  })
-);
-
-// Admin — create manually
-apiRouter.post(
-  '/admin/flight-inquiries',
-  authenticateJWT,
-  asyncRoute(async (req, res) => {
-    const { fullName, phone } = req.body || {};
-    if (!fullName || !phone) {
-      return fail(res, 'Full name and phone are required', 400);
-    }
-
-    const inquiry = await db.createFlightInquiry({
-      fullName,
-      phone,
-      email: req.body.email || '',
-      fromCity: req.body.fromCity || '',
-      destination: req.body.destination || '',
-      departureDate: req.body.departureDate || '',
-      returnDate: req.body.returnDate || '',
-      tripType: req.body.tripType || (req.body.returnDate ? 'Round Trip' : 'One Way'),
-      passengers: req.body.passengers !== undefined ? Number(req.body.passengers) : 1,
-      cabinClass: req.body.cabinClass || 'Economy',
-      preferredAirline: req.body.preferredAirline || '',
-      notes: req.body.notes || '',
-      status: req.body.status || 'New',
-    });
-
-    return send(res, inquiry, 201);
-  })
-);
-
-// Admin — update
-apiRouter.put(
-  '/admin/flight-inquiries/:id',
-  authenticateJWT,
-  asyncRoute(async (req, res) => {
-    const item = await db.updateFlightInquiry(req.params.id, req.body);
-    if (!item) return fail(res, 'Flight inquiry not found', 404);
-    return send(res, item);
-  })
-);
-
-// Admin — delete
-apiRouter.delete(
-  '/admin/flight-inquiries/:id',
-  authenticateJWT,
-  asyncRoute(async (req, res) => {
-    const item = await db.deleteFlightInquiry(req.params.id);
-    if (!item) return fail(res, 'Flight inquiry not found', 404);
-    return send(res, { message: 'Flight inquiry deleted successfully' });
   })
 );
