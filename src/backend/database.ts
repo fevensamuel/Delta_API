@@ -1,6 +1,6 @@
 import { Pool, type PoolClient } from 'pg';
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import type {
   AdminUser,
   GalleryItem,
@@ -25,9 +25,10 @@ const DATABASE_URL = process.env.DATABASE_URL || '';
 
 const useSSL =
   process.env.DATABASE_SSL === 'true' ||
-  /render\.com|heroku|amazonaws|neon\.tech|supabase\.co|railway\.app|sslmode=require/.test(
-    DATABASE_URL
-  );
+  (!/^(false|0|no)$/i.test(process.env.DATABASE_SSL || '') &&
+    /render\.com|heroku|amazonaws|neon\.tech|supabase\.co|railway\.app|sslmode=require/.test(
+      DATABASE_URL
+    ));
 
 export const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -52,6 +53,50 @@ const json = (value: unknown, fallback: any[] = []): any[] => {
     }
   }
   return (value as any) ?? fallback;
+};
+
+/**
+ * Normalize an opt-in value that may arrive as:
+ *   boolean (true/false)
+ *   string ('Active', 'Opt-out', 'true', 'false', 'yes', 'no', '1', '0')
+ *   undefined / null (returns undefined so updateEntity skips it)
+ */
+const normalizeOptIn = (value: any): boolean | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'active' || v === 'true' || v === 'yes' || v === '1') return true;
+    if (
+      v === 'opt-out' ||
+      v === 'optout' ||
+      v === 'inactive' ||
+      v === 'false' ||
+      v === 'no' ||
+      v === '0'
+    )
+      return false;
+  }
+  return Boolean(value);
+};
+
+/** Safely coerce an admin permissions value into a JSON array. */
+const normalizePermissions = (value: any): string[] => {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === 'string') {
+    // Accept either valid JSON array or comma-separated list
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      // fall through to comma split
+    }
+    return value
+      .split(',')
+      .map((s) => s.trim().replace(/^["'[\]]+|["'[\]]+$/g, ''))
+      .filter(Boolean);
+  }
+  return [];
 };
 
 const NUMERIC_FIELDS = [
@@ -102,7 +147,7 @@ const mapRow = (row: any): any => {
 const rows = (result: { rows: any[] }) => result.rows.map(mapRow);
 const one = (result: { rows: any[] }) => mapRow(result.rows[0]);
 const makeId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+  `${prefix}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
 // ============================================================
 // CONNECTION TEST
@@ -596,7 +641,7 @@ const adminUserData = (data: any) =>
       const camel = field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
       let value = data[camel];
       if (camel === 'permissions') {
-        value = JSON.stringify(value ?? []);
+        value = JSON.stringify(normalizePermissions(value));
       }
       if (camel === 'isActive' && (value === undefined || value === null)) {
         value = true;
@@ -739,6 +784,16 @@ export const dbOperations = {
     one(await pool.query('SELECT * FROM subscribers WHERE phone = $1', [phone])),
 
   async createSubscriber(data: any) {
+    const pkgValue =
+      data.packageInterestId !== undefined
+        ? data.packageInterestId
+        : data.packageInterest !== undefined
+          ? data.packageInterest || null
+          : null;
+
+    const optIn = normalizeOptIn(data.optInStatus);
+    const optInValue = optIn === undefined ? true : optIn;
+
     return one(
       await pool.query(
         `INSERT INTO subscribers (id, phone, email, name, channel, package_interest_id, opt_in_status)
@@ -757,28 +812,32 @@ export const dbOperations = {
           data.email || '',
           data.name || '',
           data.channel || 'Web Form',
-          data.packageInterestId || null,
-          data.optInStatus !== false,
+          pkgValue,
+          optInValue,
         ]
       )
     );
   },
 
- updateSubscriber: (entityId: string, data: any) =>
-  updateEntity(
-    'subscribers',
-    entityId,
-    {
-      phone: data.phone,
-      email: data.email,
-      name: data.name,
-      channel: data.channel,
-      package_interest_id:
-        data.packageInterestId !== undefined ? (data.packageInterestId ?? null) : undefined,
-      opt_in_status: data.optInStatus,
-    },
-    ['phone', 'email', 'name', 'channel', 'package_interest_id', 'opt_in_status']
-  ),
+  updateSubscriber: (entityId: string, data: any) =>
+    updateEntity(
+      'subscribers',
+      entityId,
+      {
+        phone: data.phone,
+        email: data.email,
+        name: data.name,
+        channel: data.channel,
+        package_interest_id:
+          data.packageInterestId !== undefined
+            ? (data.packageInterestId ?? null)
+            : data.packageInterest !== undefined
+              ? (data.packageInterest || null)
+              : undefined,
+        opt_in_status: normalizeOptIn(data.optInStatus),
+      },
+      ['phone', 'email', 'name', 'channel', 'package_interest_id', 'opt_in_status']
+    ),
 
   deleteSubscriber: remove('subscribers'),
 
@@ -1046,42 +1105,38 @@ export const dbOperations = {
     one(await pool.query('SELECT * FROM admin_users WHERE LOWER(email)=LOWER($1)', [email])),
 
   createAdminUser: (data: any) =>
-      createEntity(
-    'admin_users',
-    {
-      ...data,
-      password_hash: data.passwordHash,
-      role: data.role || 'Admin',
-      // ✅ Force stringify so Postgres receives valid JSON, not array syntax
-      permissions: JSON.stringify(
-        Array.isArray(data.permissions) ? data.permissions : []
-      ),
-      is_active: data.isActive,
-      last_login: data.lastLogin,
-    },
-    adminUserFields,
-    'usr'
-  ),
+    createEntity(
+      'admin_users',
+      {
+        ...data,
+        password_hash: data.passwordHash,
+        role: data.role || 'Admin',
+        permissions: JSON.stringify(normalizePermissions(data.permissions)),
+        is_active: data.isActive,
+        last_login: data.lastLogin,
+      },
+      adminUserFields,
+      'usr'
+    ),
 
   updateAdminUser: (entityId: string, data: any) =>
-   updateEntity(
-    'admin_users',
-    entityId,
-    {
-      username: data.username,
-      email: data.email,
-      password_hash: data.passwordHash,
-      role: data.role,
-      // ✅ Force stringify so Postgres receives valid JSON
-      permissions:
-        data.permissions !== undefined
-          ? JSON.stringify(Array.isArray(data.permissions) ? data.permissions : [])
-          : undefined,
-      is_active: data.isActive,
-      status: data.status,
-    },
-    ['username', 'email', 'password_hash', 'role', 'permissions', 'is_active', 'status']
-  ),
+    updateEntity(
+      'admin_users',
+      entityId,
+      {
+        username: data.username,
+        email: data.email,
+        password_hash: data.passwordHash,
+        role: data.role,
+        permissions:
+          data.permissions !== undefined
+            ? JSON.stringify(normalizePermissions(data.permissions))
+            : undefined,
+        is_active: data.isActive,
+        status: data.status,
+      },
+      ['username', 'email', 'password_hash', 'role', 'permissions', 'is_active', 'status']
+    ),
 
   deleteAdminUser: remove('admin_users'),
 
@@ -1097,7 +1152,7 @@ export const dbOperations = {
     return one(
       await pool.query(
         `UPDATE admin_users SET permissions = $1::jsonb, updated_at = NOW() WHERE id = $2 RETURNING *`,
-        [JSON.stringify(permissions ?? []), entityId]
+        [JSON.stringify(normalizePermissions(permissions)), entityId]
       )
     );
   },

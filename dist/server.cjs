@@ -35,10 +35,10 @@ var import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
 
 // src/backend/database.ts
 var import_pg = require("pg");
-var import_crypto = __toESM(require("crypto"), 1);
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
+var import_crypto = __toESM(require("crypto"), 1);
 var DATABASE_URL = process.env.DATABASE_URL || "";
-var useSSL = process.env.DATABASE_SSL === "true" || /render\.com|heroku|amazonaws|neon\.tech|supabase\.co|railway\.app|sslmode=require/.test(
+var useSSL = process.env.DATABASE_SSL === "true" || !/^(false|0|no)$/i.test(process.env.DATABASE_SSL || "") && /render\.com|heroku|amazonaws|neon\.tech|supabase\.co|railway\.app|sslmode=require/.test(
   DATABASE_URL
 );
 var pool = new import_pg.Pool({
@@ -59,6 +59,29 @@ var json = (value, fallback = []) => {
     }
   }
   return value ?? fallback;
+};
+var normalizeOptIn = (value) => {
+  if (value === void 0 || value === null) return void 0;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    if (v === "active" || v === "true" || v === "yes" || v === "1") return true;
+    if (v === "opt-out" || v === "optout" || v === "inactive" || v === "false" || v === "no" || v === "0")
+      return false;
+  }
+  return Boolean(value);
+};
+var normalizePermissions = (value) => {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+    }
+    return value.split(",").map((s) => s.trim().replace(/^["'[\]]+|["'[\]]+$/g, "")).filter(Boolean);
+  }
+  return [];
 };
 var NUMERIC_FIELDS = [
   "priceUsd",
@@ -709,6 +732,9 @@ var dbOperations = {
   getOptedInSubscribers: list("subscribers", "created_at DESC", "opt_in_status = TRUE"),
   findSubscriberByPhone: async (phone) => one(await pool.query("SELECT * FROM subscribers WHERE phone = $1", [phone])),
   async createSubscriber(data) {
+    const pkgValue = data.packageInterestId !== void 0 ? data.packageInterestId : data.packageInterest !== void 0 ? data.packageInterest || null : null;
+    const optIn = normalizeOptIn(data.optInStatus);
+    const optInValue = optIn === void 0 ? true : optIn;
     return one(
       await pool.query(
         `INSERT INTO subscribers (id, phone, email, name, channel, package_interest_id, opt_in_status)
@@ -727,8 +753,8 @@ var dbOperations = {
           data.email || "",
           data.name || "",
           data.channel || "Web Form",
-          data.packageInterestId || null,
-          data.optInStatus !== false
+          pkgValue,
+          optInValue
         ]
       )
     );
@@ -741,8 +767,8 @@ var dbOperations = {
       email: data.email,
       name: data.name,
       channel: data.channel,
-      package_interest_id: data.packageInterestId !== void 0 ? data.packageInterestId ?? null : void 0,
-      opt_in_status: data.optInStatus
+      package_interest_id: data.packageInterestId !== void 0 ? data.packageInterestId ?? null : data.packageInterest !== void 0 ? data.packageInterest || null : void 0,
+      opt_in_status: normalizeOptIn(data.optInStatus)
     },
     ["phone", "email", "name", "channel", "package_interest_id", "opt_in_status"]
   ),
@@ -1004,10 +1030,7 @@ var dbOperations = {
       ...data,
       password_hash: data.passwordHash,
       role: data.role || "Admin",
-      // ✅ Force stringify so Postgres receives valid JSON, not array syntax
-      permissions: JSON.stringify(
-        Array.isArray(data.permissions) ? data.permissions : []
-      ),
+      permissions: JSON.stringify(normalizePermissions(data.permissions)),
       is_active: data.isActive,
       last_login: data.lastLogin
     },
@@ -1022,8 +1045,7 @@ var dbOperations = {
       email: data.email,
       password_hash: data.passwordHash,
       role: data.role,
-      // ✅ Force stringify so Postgres receives valid JSON
-      permissions: data.permissions !== void 0 ? JSON.stringify(Array.isArray(data.permissions) ? data.permissions : []) : void 0,
+      permissions: data.permissions !== void 0 ? JSON.stringify(normalizePermissions(data.permissions)) : void 0,
       is_active: data.isActive,
       status: data.status
     },
@@ -1040,7 +1062,7 @@ var dbOperations = {
     return one(
       await pool.query(
         `UPDATE admin_users SET permissions = $1::jsonb, updated_at = NOW() WHERE id = $2 RETURNING *`,
-        [JSON.stringify(permissions ?? []), entityId]
+        [JSON.stringify(normalizePermissions(permissions)), entityId]
       )
     );
   },
