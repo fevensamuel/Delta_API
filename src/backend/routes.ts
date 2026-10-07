@@ -1038,17 +1038,79 @@ apiRouter.post(
     if (!message) return fail(res, 'Message is required', 400);
 
     const recipientType = req.body.recipientType || 'subscribers';
+    const targetFilter = String(req.body.targetFilter || 'Active Opt-in');
     let recipients: any[] = [];
 
+    // ---------- PERSONS (from package.persons JSONB) ----------
     if (recipientType === 'persons') {
       const packages = await db.getAllPackages();
-      recipients = packages.flatMap((pkg: any) =>
+      const selectedPkgId = req.body.packageId;
+
+      const source = selectedPkgId
+        ? packages.filter((pkg: any) => pkg.id === selectedPkgId)
+        : packages;
+
+      recipients = source.flatMap((pkg: any) =>
         (pkg.persons || [])
           .filter((p: any) => p && p.phone)
-          .map((p: any) => ({ phone: p.phone, name: p.name || '', packageTitle: pkg.titleEn }))
+          .map((p: any) => ({
+            phone: p.phone,
+            name: p.name || '',
+            packageTitle: pkg.titleEn,
+          }))
       );
-    } else {
-      recipients = await db.getOptedInSubscribers();
+    }
+    // ---------- SUBSCRIBERS ----------
+    else {
+      const allSubs = await db.getAllSubscribers();
+
+      // Priority 1: explicit packageInterestId (sent by new admin)
+      if (req.body.packageInterestId) {
+        recipients = allSubs.filter(
+          (s: any) => s.packageInterestId === req.body.packageInterestId
+        );
+      }
+      // Priority 2: legacy "Package: <title>" text filter — matches by resolved title
+      else if (targetFilter.startsWith('Package:')) {
+        const cleanName = targetFilter
+          .replace(/^Package:\s*/i, '')
+          .trim()
+          .toLowerCase();
+
+        const packages = await db.getAllPackages();
+        const matchedPkg = packages.find(
+          (p: any) => p.titleEn.toLowerCase() === cleanName
+        );
+
+        recipients = matchedPkg
+          ? allSubs.filter((s: any) => s.packageInterestId === matchedPkg.id)
+          : [];
+      }
+      // Priority 3: All Subscribers
+      else if (targetFilter === 'All Subscribers') {
+        recipients = allSubs;
+      }
+      // Priority 4: All Package Leads (anyone with a package)
+      else if (targetFilter === 'Package-specific') {
+        recipients = allSubs.filter((s: any) => Boolean(s.packageInterestId));
+      }
+      // Priority 5: Manual numbers
+      else if (targetFilter === 'Manual Numbers') {
+        const raw = String(req.body.manualNumbers || '');
+        const phones = raw
+          .split(/[\n,;]+/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        recipients = phones.map((phone) => ({ phone, name: '' }));
+      }
+      // Default: Active Opt-in
+      else {
+        recipients = allSubs.filter((s: any) => s.optInStatus === true);
+      }
+    }
+
+    if (recipients.length === 0) {
+      return fail(res, 'No recipients matched the selected filter', 400);
     }
 
     const logs = await Promise.all(
@@ -1065,6 +1127,7 @@ apiRouter.post(
     return send(res, {
       sent: logs.length,
       recipientType,
+      targetFilter,
       recipientsCount: recipients.length,
       logs,
     });

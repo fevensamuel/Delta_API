@@ -736,13 +736,14 @@ var dbOperations = {
     "subscribers",
     entityId,
     {
+      phone: data.phone,
       email: data.email,
       name: data.name,
       channel: data.channel,
-      package_interest_id: data.packageInterestId,
+      package_interest_id: data.packageInterestId !== void 0 ? data.packageInterestId ?? null : void 0,
       opt_in_status: data.optInStatus
     },
-    ["email", "name", "channel", "package_interest_id", "opt_in_status"]
+    ["phone", "email", "name", "channel", "package_interest_id", "opt_in_status"]
   ),
   deleteSubscriber: remove("subscribers"),
   async deleteSubscribers(ids = [], phones = []) {
@@ -1002,7 +1003,10 @@ var dbOperations = {
       ...data,
       password_hash: data.passwordHash,
       role: data.role || "Admin",
-      permissions: Array.isArray(data.permissions) ? data.permissions : [],
+      // ✅ Force stringify so Postgres receives valid JSON, not array syntax
+      permissions: JSON.stringify(
+        Array.isArray(data.permissions) ? data.permissions : []
+      ),
       is_active: data.isActive,
       last_login: data.lastLogin
     },
@@ -1017,7 +1021,8 @@ var dbOperations = {
       email: data.email,
       password_hash: data.passwordHash,
       role: data.role,
-      permissions: data.permissions !== void 0 ? data.permissions : void 0,
+      // ✅ Force stringify so Postgres receives valid JSON
+      permissions: data.permissions !== void 0 ? JSON.stringify(Array.isArray(data.permissions) ? data.permissions : []) : void 0,
       is_active: data.isActive,
       status: data.status
     },
@@ -2326,14 +2331,46 @@ apiRouter.post(
     const message = String(req.body.message || "");
     if (!message) return fail(res, "Message is required", 400);
     const recipientType = req.body.recipientType || "subscribers";
+    const targetFilter = String(req.body.targetFilter || "Active Opt-in");
     let recipients = [];
     if (recipientType === "persons") {
       const packages = await dbOperations.getAllPackages();
-      recipients = packages.flatMap(
-        (pkg) => (pkg.persons || []).filter((p) => p && p.phone).map((p) => ({ phone: p.phone, name: p.name || "", packageTitle: pkg.titleEn }))
+      const selectedPkgId = req.body.packageId;
+      const source = selectedPkgId ? packages.filter((pkg) => pkg.id === selectedPkgId) : packages;
+      recipients = source.flatMap(
+        (pkg) => (pkg.persons || []).filter((p) => p && p.phone).map((p) => ({
+          phone: p.phone,
+          name: p.name || "",
+          packageTitle: pkg.titleEn
+        }))
       );
     } else {
-      recipients = await dbOperations.getOptedInSubscribers();
+      const allSubs = await dbOperations.getAllSubscribers();
+      if (req.body.packageInterestId) {
+        recipients = allSubs.filter(
+          (s) => s.packageInterestId === req.body.packageInterestId
+        );
+      } else if (targetFilter.startsWith("Package:")) {
+        const cleanName = targetFilter.replace(/^Package:\s*/i, "").trim().toLowerCase();
+        const packages = await dbOperations.getAllPackages();
+        const matchedPkg = packages.find(
+          (p) => p.titleEn.toLowerCase() === cleanName
+        );
+        recipients = matchedPkg ? allSubs.filter((s) => s.packageInterestId === matchedPkg.id) : [];
+      } else if (targetFilter === "All Subscribers") {
+        recipients = allSubs;
+      } else if (targetFilter === "Package-specific") {
+        recipients = allSubs.filter((s) => Boolean(s.packageInterestId));
+      } else if (targetFilter === "Manual Numbers") {
+        const raw = String(req.body.manualNumbers || "");
+        const phones = raw.split(/[\n,;]+/).map((p) => p.trim()).filter(Boolean);
+        recipients = phones.map((phone) => ({ phone, name: "" }));
+      } else {
+        recipients = allSubs.filter((s) => s.optInStatus === true);
+      }
+    }
+    if (recipients.length === 0) {
+      return fail(res, "No recipients matched the selected filter", 400);
     }
     const logs = await Promise.all(
       recipients.map(
@@ -2348,6 +2385,7 @@ apiRouter.post(
     return send(res, {
       sent: logs.length,
       recipientType,
+      targetFilter,
       recipientsCount: recipients.length,
       logs
     });

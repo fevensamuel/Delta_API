@@ -763,19 +763,21 @@ export const dbOperations = {
     );
   },
 
-  updateSubscriber: (entityId: string, data: any) =>
-    updateEntity(
-      'subscribers',
-      entityId,
-      {
-        email: data.email,
-        name: data.name,
-        channel: data.channel,
-        package_interest_id: data.packageInterestId,
-        opt_in_status: data.optInStatus,
-      },
-      ['email', 'name', 'channel', 'package_interest_id', 'opt_in_status']
-    ),
+ updateSubscriber: (entityId: string, data: any) =>
+  updateEntity(
+    'subscribers',
+    entityId,
+    {
+      phone: data.phone,
+      email: data.email,
+      name: data.name,
+      channel: data.channel,
+      package_interest_id:
+        data.packageInterestId !== undefined ? (data.packageInterestId ?? null) : undefined,
+      opt_in_status: data.optInStatus,
+    },
+    ['phone', 'email', 'name', 'channel', 'package_interest_id', 'opt_in_status']
+  ),
 
   deleteSubscriber: remove('subscribers'),
 
@@ -1043,35 +1045,42 @@ export const dbOperations = {
     one(await pool.query('SELECT * FROM admin_users WHERE LOWER(email)=LOWER($1)', [email])),
 
   createAdminUser: (data: any) =>
-    createEntity(
-      'admin_users',
-      {
-        ...data,
-        password_hash: data.passwordHash,
-        role: data.role || 'Admin',
-        permissions: Array.isArray(data.permissions) ? data.permissions : [],
-        is_active: data.isActive,
-        last_login: data.lastLogin,
-      },
-      adminUserFields,
-      'usr'
-    ),
+      createEntity(
+    'admin_users',
+    {
+      ...data,
+      password_hash: data.passwordHash,
+      role: data.role || 'Admin',
+      // ✅ Force stringify so Postgres receives valid JSON, not array syntax
+      permissions: JSON.stringify(
+        Array.isArray(data.permissions) ? data.permissions : []
+      ),
+      is_active: data.isActive,
+      last_login: data.lastLogin,
+    },
+    adminUserFields,
+    'usr'
+  ),
 
   updateAdminUser: (entityId: string, data: any) =>
-    updateEntity(
-      'admin_users',
-      entityId,
-      {
-        username: data.username,
-        email: data.email,
-        password_hash: data.passwordHash,
-        role: data.role,
-        permissions: data.permissions !== undefined ? data.permissions : undefined,
-        is_active: data.isActive,
-        status: data.status,
-      },
-      ['username', 'email', 'password_hash', 'role', 'permissions', 'is_active', 'status']
-    ),
+   updateEntity(
+    'admin_users',
+    entityId,
+    {
+      username: data.username,
+      email: data.email,
+      password_hash: data.passwordHash,
+      role: data.role,
+      // ✅ Force stringify so Postgres receives valid JSON
+      permissions:
+        data.permissions !== undefined
+          ? JSON.stringify(Array.isArray(data.permissions) ? data.permissions : [])
+          : undefined,
+      is_active: data.isActive,
+      status: data.status,
+    },
+    ['username', 'email', 'password_hash', 'role', 'permissions', 'is_active', 'status']
+  ),
 
   deleteAdminUser: remove('admin_users'),
 
