@@ -43,25 +43,30 @@ async function startServer() {
   console.log('🌐 Allowed CORS origins:', allowedOrigins.length ? allowedOrigins : '(none)');
 
   app.use(
-    cors({
-      origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.length === 0) return callback(null, true);
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
 
-        const normalizedOrigin = origin.replace(/\/$/, '');
-        if (allowedOrigins.includes(normalizedOrigin)) {
-          return callback(null, true);
-        }
+      // ✅ Always allow localhost (any port) for dev
+      if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
+      if (/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) return callback(null, true);
 
-        console.warn('❌ CORS blocked origin:', origin);
-        return callback(null, false);
-      },
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Range'],
-      exposedHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
-      credentials: true,
-    })
-  );
+      if (allowedOrigins.length === 0) return callback(null, true);
+
+      const normalizedOrigin = origin.replace(/\/$/, '');
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      console.warn('❌ CORS blocked origin:', origin);
+      return callback(null, false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Range'],
+    exposedHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
+    credentials: true,
+  })
+);
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));

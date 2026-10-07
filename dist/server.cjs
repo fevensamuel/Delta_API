@@ -35,6 +35,7 @@ var import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
 
 // src/backend/database.ts
 var import_pg = require("pg");
+var import_crypto = __toESM(require("crypto"), 1);
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var DATABASE_URL = process.env.DATABASE_URL || "";
 var useSSL = process.env.DATABASE_SSL === "true" || /render\.com|heroku|amazonaws|neon\.tech|supabase\.co|railway\.app|sslmode=require/.test(
@@ -122,7 +123,7 @@ var mapRow = (row) => {
 };
 var rows = (result) => result.rows.map(mapRow);
 var one = (result) => mapRow(result.rows[0]);
-var makeId = (prefix) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e5)}`;
+var makeId = (prefix) => `${prefix}-${Date.now()}-${import_crypto.default.randomUUID().slice(0, 8)}`;
 async function testConnection() {
   try {
     await pool.query("SELECT 1");
@@ -3957,6 +3958,8 @@ async function startServer() {
     (0, import_cors.default)({
       origin: function(origin, callback) {
         if (!origin) return callback(null, true);
+        if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
+        if (/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) return callback(null, true);
         if (allowedOrigins.length === 0) return callback(null, true);
         const normalizedOrigin = origin.replace(/\/$/, "");
         if (allowedOrigins.includes(normalizedOrigin)) {

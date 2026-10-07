@@ -1,4 +1,5 @@
 import { Pool, type PoolClient } from 'pg';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import type {
   AdminUser,
@@ -101,7 +102,7 @@ const mapRow = (row: any): any => {
 const rows = (result: { rows: any[] }) => result.rows.map(mapRow);
 const one = (result: { rows: any[] }) => mapRow(result.rows[0]);
 const makeId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  `${prefix}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
 
 // ============================================================
 // CONNECTION TEST
