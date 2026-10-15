@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { dbOperations as db } from './database.js';
 import { getExchangeRate, setAdminOverrideRate } from '../services/exchangeRateService.js';
+import { sendSingleSms } from '../services/afroSmsService.js';
 import {
   galleryUploadFields,
   bulkUpload,
@@ -1028,6 +1029,9 @@ apiRouter.post(
 // ============================================================
 // SMS
 // ============================================================
+import { sendSingleSms } from '../services/afroSmsService.js';
+// ... other imports
+
 apiRouter.post(
   '/admin/sms/campaign',
   authenticateJWT,
@@ -1037,74 +1041,42 @@ apiRouter.post(
     const message = String(req.body.message || '');
     if (!message) return fail(res, 'Message is required', 400);
 
+    const campaignName = String(req.body.name || req.body.campaignName || 'Untitled Campaign');
     const recipientType = req.body.recipientType || 'subscribers';
     const targetFilter = String(req.body.targetFilter || 'Active Opt-in');
-    let recipients: any[] = [];
+    const pkgId = req.body.packageInterestId || req.body.packageId;
+    const manualNumbers = String(req.body.manualNumbers || '');
 
-    // ---------- PERSONS (from package.persons JSONB) ----------
+    // ---- Resolve recipients ----
+    let recipients: { phone: string; name?: string }[] = [];
+
     if (recipientType === 'persons') {
       const packages = await db.getAllPackages();
-      const selectedPkgId = req.body.packageId;
-
-      const source = selectedPkgId
-        ? packages.filter((pkg: any) => pkg.id === selectedPkgId)
+      const source = pkgId
+        ? packages.filter((p: any) => p.id === pkgId)
         : packages;
-
       recipients = source.flatMap((pkg: any) =>
         (pkg.persons || [])
           .filter((p: any) => p && p.phone)
-          .map((p: any) => ({
-            phone: p.phone,
-            name: p.name || '',
-            packageTitle: pkg.titleEn,
-          }))
+          .map((p: any) => ({ phone: p.phone, name: p.name || '' }))
       );
-    }
-    // ---------- SUBSCRIBERS ----------
-    else {
+    } else {
       const allSubs = await db.getAllSubscribers();
 
-      // Priority 1: explicit packageInterestId (sent by new admin)
-      if (req.body.packageInterestId) {
-        recipients = allSubs.filter(
-          (s: any) => s.packageInterestId === req.body.packageInterestId
-        );
-      }
-      // Priority 2: legacy "Package: <title>" text filter — matches by resolved title
-      else if (targetFilter.startsWith('Package:')) {
-        const cleanName = targetFilter
-          .replace(/^Package:\s*/i, '')
-          .trim()
-          .toLowerCase();
-
-        const packages = await db.getAllPackages();
-        const matchedPkg = packages.find(
-          (p: any) => p.titleEn.toLowerCase() === cleanName
-        );
-
-        recipients = matchedPkg
-          ? allSubs.filter((s: any) => s.packageInterestId === matchedPkg.id)
-          : [];
-      }
-      // Priority 3: All Subscribers
-      else if (targetFilter === 'All Subscribers') {
+      if (pkgId) {
+        recipients = allSubs.filter((s: any) => s.packageInterestId === pkgId);
+      } else if (targetFilter === 'All Subscribers') {
         recipients = allSubs;
-      }
-      // Priority 4: All Package Leads (anyone with a package)
-      else if (targetFilter === 'Package-specific') {
+      } else if (targetFilter === 'Package-specific') {
         recipients = allSubs.filter((s: any) => Boolean(s.packageInterestId));
-      }
-      // Priority 5: Manual numbers
-      else if (targetFilter === 'Manual Numbers') {
-        const raw = String(req.body.manualNumbers || '');
-        const phones = raw
+      } else if (targetFilter === 'Manual Numbers') {
+        const phones = manualNumbers
           .split(/[\n,;]+/)
           .map((p) => p.trim())
           .filter(Boolean);
-        recipients = phones.map((phone) => ({ phone, name: '' }));
-      }
-      // Default: Active Opt-in
-      else {
+        recipients = phones.map((phone) => ({ phone }));
+      } else {
+        // Default: Active Opt-in
         recipients = allSubs.filter((s: any) => s.optInStatus === true);
       }
     }
@@ -1113,23 +1085,45 @@ apiRouter.post(
       return fail(res, 'No recipients matched the selected filter', 400);
     }
 
-    const logs = await Promise.all(
-      recipients.map((recipient: any) =>
-        db.createSmsLog({
+    // ---- Send + log each ----
+    let delivered = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const recipient of recipients) {
+      const result = await sendSingleSms(recipient.phone, message);
+      const status = result.success ? 'Delivered' : 'Failed';
+
+      try {
+        await db.createSmsLog({
           phone: recipient.phone,
           message,
-          campaignName: req.body.campaignName,
-          status: 'Delivered',
-        })
-      )
-    );
+          campaignName,
+          status,
+          errorMessage: result.error || null,
+        });
+      } catch (logErr) {
+        console.error('Failed to write sms_log:', logErr);
+      }
+
+      if (result.success) delivered++;
+      else {
+        failed++;
+        if (errors.length < 5 && result.error) errors.push(result.error);
+      }
+
+      // Rate limit — 100ms between sends
+      await new Promise((r) => setTimeout(r, 100));
+    }
 
     return send(res, {
-      sent: logs.length,
+      campaignName,
       recipientType,
       targetFilter,
-      recipientsCount: recipients.length,
-      logs,
+      totalRecipients: recipients.length,
+      delivered,
+      failed,
+      sampleErrors: errors,
     });
   })
 );

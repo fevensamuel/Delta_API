@@ -469,6 +469,9 @@ async function createTables(client) {
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS preferred_airline TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
+
+     -- \u2705 SMS error tracking (added 2026-10-15 for Afro Messages integration)
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
   `);
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
   await client.query(`
@@ -781,7 +784,15 @@ var dbOperations = {
     return result.rowCount || 0;
   },
   async bulkImportSubscribers(items) {
-    return Promise.all(items.map((item) => this.createSubscriber(item)));
+    const results = await Promise.allSettled(
+      items.map((item) => this.createSubscriber(item))
+    );
+    const added = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.length - added;
+    if (failed > 0) {
+      console.warn(`\u26A0\uFE0F Bulk import: ${added} succeeded, ${failed} failed`);
+    }
+    return { added, updated: 0, failed };
   },
   // ---------- INQUIRIES ----------
   getAllInquiries: list("inquiries"),
@@ -1013,8 +1024,12 @@ var dbOperations = {
   getAllSmsLogs: list("sms_logs", "sent_at DESC"),
   createSmsLog: (data) => createEntity(
     "sms_logs",
-    { ...data, campaign_name: data.campaignName },
-    ["phone", "message", "status", "campaign_name"],
+    {
+      ...data,
+      campaign_name: data.campaignName,
+      error_message: data.errorMessage
+    },
+    ["phone", "message", "status", "campaign_name", "error_message"],
     "sms"
   ),
   // ---------- ADMIN USERS ----------
@@ -1507,6 +1522,40 @@ var requirePermission = (permissionKey) => {
     next();
   };
 };
+
+// src/services/afroSmsService.ts
+var import_afromessage = __toESM(require("afromessage"), 1);
+var smsApi = import_afromessage.default.getInstance({
+  apiKey: process.env.AFROMESSAGE_TOKEN || "",
+  senderName: process.env.AFROMESSAGE_SENDER_NAMES || "",
+  identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || ""
+});
+async function sendSingleSms(phone, message) {
+  if (!phone) {
+    return { success: false, error: "Missing phone number" };
+  }
+  if (!process.env.AFROMESSAGE_TOKEN) {
+    return { success: false, error: "AFROMESSAGE_TOKEN not configured" };
+  }
+  const to = phone.trim();
+  try {
+    const response = await smsApi.sendSms({ to, message });
+    console.log("\u{1F4F1} Afro response:", JSON.stringify(response));
+    const acknowledged = response?.acknowledge === "success" || response?.status === "success" || response?.response?.message_id || response?.message_id;
+    if (acknowledged) {
+      return {
+        success: true,
+        messageId: response?.response?.message_id || response?.message_id || void 0,
+        raw: response
+      };
+    }
+    return { success: false, error: JSON.stringify(response), raw: response };
+  } catch (error) {
+    const errMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Unknown SMS provider error";
+    console.error("\u{1F4F1} Afro send failed:", errMsg, error?.response?.data);
+    return { success: false, error: errMsg, raw: error?.response?.data };
+  }
+}
 
 // src/backend/routes.ts
 var apiRouter = (0, import_express.Router)();
@@ -2353,41 +2402,29 @@ apiRouter.post(
   asyncRoute(async (req, res) => {
     const message = String(req.body.message || "");
     if (!message) return fail(res, "Message is required", 400);
+    const campaignName = String(req.body.name || req.body.campaignName || "Untitled Campaign");
     const recipientType = req.body.recipientType || "subscribers";
     const targetFilter = String(req.body.targetFilter || "Active Opt-in");
+    const pkgId = req.body.packageInterestId || req.body.packageId;
+    const manualNumbers = String(req.body.manualNumbers || "");
     let recipients = [];
     if (recipientType === "persons") {
       const packages = await dbOperations.getAllPackages();
-      const selectedPkgId = req.body.packageId;
-      const source = selectedPkgId ? packages.filter((pkg) => pkg.id === selectedPkgId) : packages;
+      const source = pkgId ? packages.filter((p) => p.id === pkgId) : packages;
       recipients = source.flatMap(
-        (pkg) => (pkg.persons || []).filter((p) => p && p.phone).map((p) => ({
-          phone: p.phone,
-          name: p.name || "",
-          packageTitle: pkg.titleEn
-        }))
+        (pkg) => (pkg.persons || []).filter((p) => p && p.phone).map((p) => ({ phone: p.phone, name: p.name || "" }))
       );
     } else {
       const allSubs = await dbOperations.getAllSubscribers();
-      if (req.body.packageInterestId) {
-        recipients = allSubs.filter(
-          (s) => s.packageInterestId === req.body.packageInterestId
-        );
-      } else if (targetFilter.startsWith("Package:")) {
-        const cleanName = targetFilter.replace(/^Package:\s*/i, "").trim().toLowerCase();
-        const packages = await dbOperations.getAllPackages();
-        const matchedPkg = packages.find(
-          (p) => p.titleEn.toLowerCase() === cleanName
-        );
-        recipients = matchedPkg ? allSubs.filter((s) => s.packageInterestId === matchedPkg.id) : [];
+      if (pkgId) {
+        recipients = allSubs.filter((s) => s.packageInterestId === pkgId);
       } else if (targetFilter === "All Subscribers") {
         recipients = allSubs;
       } else if (targetFilter === "Package-specific") {
         recipients = allSubs.filter((s) => Boolean(s.packageInterestId));
       } else if (targetFilter === "Manual Numbers") {
-        const raw = String(req.body.manualNumbers || "");
-        const phones = raw.split(/[\n,;]+/).map((p) => p.trim()).filter(Boolean);
-        recipients = phones.map((phone) => ({ phone, name: "" }));
+        const phones = manualNumbers.split(/[\n,;]+/).map((p) => p.trim()).filter(Boolean);
+        recipients = phones.map((phone) => ({ phone }));
       } else {
         recipients = allSubs.filter((s) => s.optInStatus === true);
       }
@@ -2395,22 +2432,38 @@ apiRouter.post(
     if (recipients.length === 0) {
       return fail(res, "No recipients matched the selected filter", 400);
     }
-    const logs = await Promise.all(
-      recipients.map(
-        (recipient) => dbOperations.createSmsLog({
+    let delivered = 0;
+    let failed = 0;
+    const errors = [];
+    for (const recipient of recipients) {
+      const result = await sendSingleSms(recipient.phone, message);
+      const status = result.success ? "Delivered" : "Failed";
+      try {
+        await dbOperations.createSmsLog({
           phone: recipient.phone,
           message,
-          campaignName: req.body.campaignName,
-          status: "Delivered"
-        })
-      )
-    );
+          campaignName,
+          status,
+          errorMessage: result.error || null
+        });
+      } catch (logErr) {
+        console.error("Failed to write sms_log:", logErr);
+      }
+      if (result.success) delivered++;
+      else {
+        failed++;
+        if (errors.length < 5 && result.error) errors.push(result.error);
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
     return send(res, {
-      sent: logs.length,
+      campaignName,
       recipientType,
       targetFilter,
-      recipientsCount: recipients.length,
-      logs
+      totalRecipients: recipients.length,
+      delivered,
+      failed,
+      sampleErrors: errors
     });
   })
 );

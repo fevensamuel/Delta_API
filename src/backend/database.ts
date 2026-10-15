@@ -480,6 +480,9 @@ async function createTables(client: PoolClient) {
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS preferred_airline TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
+
+     -- ✅ SMS error tracking (added 2026-10-15 for Afro Messages integration)
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
   `);
 
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
@@ -850,8 +853,16 @@ export const dbOperations = {
   },
 
   async bulkImportSubscribers(items: any[]) {
-    return Promise.all(items.map((item) => this.createSubscriber(item)));
-  },
+  const results = await Promise.allSettled(
+    items.map((item) => this.createSubscriber(item))
+  );
+  const added = results.filter((r) => r.status === 'fulfilled').length;
+  const failed = results.length - added;
+  if (failed > 0) {
+    console.warn(`⚠️ Bulk import: ${added} succeeded, ${failed} failed`);
+  }
+  return { added, updated: 0, failed };
+},
 
   // ---------- INQUIRIES ----------
   getAllInquiries: list('inquiries'),
@@ -1087,12 +1098,16 @@ export const dbOperations = {
   // ---------- SMS LOGS ----------
   getAllSmsLogs: list('sms_logs', 'sent_at DESC'),
   createSmsLog: (data: any) =>
-    createEntity(
-      'sms_logs',
-      { ...data, campaign_name: data.campaignName },
-      ['phone', 'message', 'status', 'campaign_name'],
-      'sms'
-    ),
+  createEntity(
+    'sms_logs',
+    {
+      ...data,
+      campaign_name: data.campaignName,
+      error_message: data.errorMessage,
+    },
+    ['phone', 'message', 'status', 'campaign_name', 'error_message'],
+    'sms'
+  ),
 
   // ---------- ADMIN USERS ----------
   getAllAdminUsers: list('admin_users', 'created_at ASC'),
