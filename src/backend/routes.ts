@@ -1034,11 +1034,14 @@ apiRouter.post(
 // ---- POST /admin/sms/campaign — Send a campaign ----
 apiRouter.post(
   '/admin/sms/campaign',
+  (_req, _res, next) => {
+    console.warn('[SMS] ROUTE_MARKER=sms-campaign-v3');
+    next();
+  },
   authenticateJWT,
   loadAdminContext,
   requirePermission('sms'),
   asyncRoute(async (req, res) => {
-    console.log('🚨 SMS ROUTE VERSION 2.0 EXECUTED — campaignName =', req.body.campaignName || req.body.name || 'NONE');
     const message = String(req.body.message || '');
     if (!message) return fail(res, 'Message is required', 400);
 
@@ -1087,13 +1090,13 @@ apiRouter.post(
     }
 
     // ---- Send + log each ----
-    let delivered = 0;
+    let sent = 0;
     let failed = 0;
     const errors: string[] = [];
 
     for (const recipient of recipients) {
       const result = await sendSingleSms(recipient.phone, message);
-      const status = result.success ? 'Delivered' : 'Failed';
+      const status = result.success ? 'Sent' : 'Failed';
 
       try {
         await db.createSmsLog({
@@ -1107,7 +1110,7 @@ apiRouter.post(
         console.error('Failed to write sms_log:', logErr);
       }
 
-      if (result.success) delivered++;
+      if (result.success) sent++;
       else {
         failed++;
         if (errors.length < 5 && result.error) errors.push(result.error);
@@ -1117,12 +1120,16 @@ apiRouter.post(
       await new Promise((r) => setTimeout(r, 100));
     }
 
+    if (sent + failed !== recipients.length) {
+      throw new Error('SMS campaign result count does not match recipient count');
+    }
+
     return send(res, {
       campaignName,
       recipientType,
       targetFilter,
       totalRecipients: recipients.length,
-      delivered,
+      sent,
       failed,
       sampleErrors: errors,
     });
@@ -1152,7 +1159,10 @@ apiRouter.get(
         COUNT(*)::int AS recipients_count,
         MAX(sent_at) AS sent_date,
         CASE
-          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Partial'
+          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0
+            AND COUNT(*) FILTER (WHERE status IN ('Sent', 'Delivered')) > 0 THEN 'Partial'
+          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Failed'
+          WHEN COUNT(*) FILTER (WHERE status = 'Sent') > 0 THEN 'Sent'
           WHEN COUNT(*) FILTER (WHERE status = 'Delivered') > 0 THEN 'Delivered'
           ELSE 'Failed'
         END AS status

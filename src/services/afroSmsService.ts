@@ -1,17 +1,30 @@
 // src/services/afroSmsService.ts
 import Afromessage from 'afromessage';
 
-const smsApi = Afromessage.getInstance({
-  apiKey: process.env.AFROMESSAGE_TOKEN || '',
-  senderName: process.env.AFROMESSAGE_SENDER_NAMES || '',
-  identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || '',
-});
+let smsApi: ReturnType<typeof Afromessage.getInstance> | undefined;
+
+const getSmsApi = () => {
+  if (!smsApi) {
+    smsApi = Afromessage.getInstance({
+      apiKey: process.env.AFROMESSAGE_TOKEN || '',
+      senderName: process.env.AFROMESSAGE_SENDER_NAMES || '',
+      identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || '',
+    });
+  }
+  return smsApi;
+};
+
+const normalizePhone = (phone: string) => {
+  const normalized = phone.trim().replace(/[\s()-]/g, '');
+  if (/^\+2519\d{8}$/.test(normalized)) return `0${normalized.slice(4)}`;
+  if (/^2519\d{8}$/.test(normalized)) return `0${normalized.slice(3)}`;
+  return normalized;
+};
 
 export interface SendResult {
   success: boolean;
   messageId?: string;
   error?: string;
-  raw?: any;
 }
 
 export async function sendSingleSms(phone: string, message: string): Promise<SendResult> {
@@ -19,41 +32,57 @@ export async function sendSingleSms(phone: string, message: string): Promise<Sen
     return { success: false, error: 'Missing phone number' };
   }
 
-  if (!process.env.AFROMESSAGE_TOKEN) {
+  const apiKey = process.env.AFROMESSAGE_TOKEN;
+  const to = normalizePhone(phone);
+  console.warn(
+    '[SMS] AfroMessage send attempt',
+    JSON.stringify({
+      apiKeyConfigured: Boolean(apiKey),
+      senderConfigured: Boolean(process.env.AFROMESSAGE_SENDER_NAMES),
+      identifierConfigured: Boolean(process.env.AFROMESSAGE_IDENTIFIER_ID),
+      phoneFormat: to.startsWith('09') ? 'ethiopian-local' : 'other',
+    })
+  );
+
+  if (!apiKey) {
+    console.error('[SMS] AfroMessage send skipped: AFROMESSAGE_TOKEN is not configured');
     return { success: false, error: 'AFROMESSAGE_TOKEN not configured' };
   }
 
-  const to = phone.trim();
-
   try {
-    const response: any = await smsApi.sendSms({ to, message });
-    console.log('📱 Afro response:', JSON.stringify(response));
+    const response = await getSmsApi().sendSms({ to, message });
+    const providerResponse = response.response;
+    const messageId = providerResponse?.message_id?.trim();
+    const providerStatus = providerResponse?.status?.trim().toLowerCase();
+    const rejectedStatuses = new Set(['failure', 'failed', 'error', 'rejected', 'denied']);
 
-    const acknowledged =
-      response?.acknowledge === 'success' ||
-      response?.status === 'success' ||
-      response?.response?.message_id ||
-      response?.message_id;
+    console.warn(
+      '[SMS] AfroMessage response',
+      JSON.stringify({
+        acknowledge: response.acknowledge,
+        providerStatus: providerStatus || null,
+        hasMessageId: Boolean(messageId),
+      })
+    );
 
-    if (acknowledged) {
-      return {
-        success: true,
-        messageId:
-          response?.response?.message_id ||
-          response?.message_id ||
-          undefined,
-        raw: response,
-      };
+    if (
+      response.acknowledge === 'success' &&
+      messageId &&
+      !rejectedStatuses.has(providerStatus || '')
+    ) {
+      return { success: true, messageId };
     }
 
-    return { success: false, error: JSON.stringify(response), raw: response };
-  } catch (error: any) {
-    const errMsg =
-      error?.response?.data?.message ||
-      error?.response?.data?.error ||
-      error?.message ||
-      'Unknown SMS provider error';
-    console.error('📱 Afro send failed:', errMsg, error?.response?.data);
-    return { success: false, error: errMsg, raw: error?.response?.data };
+    const error =
+      response.error ||
+      (rejectedStatuses.has(providerStatus || '')
+        ? `AfroMessage rejected the SMS with status "${providerStatus}"`
+        : 'AfroMessage returned no message ID; send was not confirmed');
+    console.error('[SMS] AfroMessage did not accept the SMS:', error);
+    return { success: false, error };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[SMS] AfroMessage request failed:', message);
+    return { success: false, error: message || 'Unknown SMS provider error' };
   }
 }

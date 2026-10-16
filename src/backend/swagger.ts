@@ -818,6 +818,26 @@ export const openApiSpec = {
         responses: { 200: { description: 'List of SMS campaigns' } }
       }
     },
+    '/admin/sms/campaigns/{name}/recipients': {
+      get: {
+        summary: 'Get recipients for an SMS campaign',
+        tags: ['Admin SMS'],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'name',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: {
+            description: 'Campaign recipients with send status and timestamps'
+          }
+        }
+      }
+    },
 
     // ============================================================
     // ADMIN EXCHANGE RATE

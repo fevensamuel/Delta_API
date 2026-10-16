@@ -216,6 +216,7 @@ async function startServer() {
           'DELETE /api/admin/subscribers/bulk-delete',
           'POST /api/admin/sms/campaign',
           'GET /api/admin/sms/campaigns',
+          'GET /api/admin/sms/campaigns/:name/recipients',
           'GET /api/admin/users',
           'POST /api/admin/users',
           'PUT /api/admin/users/:id',

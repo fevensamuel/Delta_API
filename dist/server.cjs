@@ -1375,35 +1375,66 @@ function initExchangeRateService() {
 
 // src/services/afroSmsService.ts
 var import_afromessage = __toESM(require("afromessage"), 1);
-var smsApi = import_afromessage.default.getInstance({
-  apiKey: process.env.AFROMESSAGE_TOKEN || "",
-  senderName: process.env.AFROMESSAGE_SENDER_NAMES || "",
-  identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || ""
-});
+var smsApi;
+var getSmsApi = () => {
+  if (!smsApi) {
+    smsApi = import_afromessage.default.getInstance({
+      apiKey: process.env.AFROMESSAGE_TOKEN || "",
+      senderName: process.env.AFROMESSAGE_SENDER_NAMES || "",
+      identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || ""
+    });
+  }
+  return smsApi;
+};
+var normalizePhone = (phone) => {
+  const normalized = phone.trim().replace(/[\s()-]/g, "");
+  if (/^\+2519\d{8}$/.test(normalized)) return `0${normalized.slice(4)}`;
+  if (/^2519\d{8}$/.test(normalized)) return `0${normalized.slice(3)}`;
+  return normalized;
+};
 async function sendSingleSms(phone, message) {
   if (!phone) {
     return { success: false, error: "Missing phone number" };
   }
-  if (!process.env.AFROMESSAGE_TOKEN) {
+  const apiKey = process.env.AFROMESSAGE_TOKEN;
+  const to = normalizePhone(phone);
+  console.warn(
+    "[SMS] AfroMessage send attempt",
+    JSON.stringify({
+      apiKeyConfigured: Boolean(apiKey),
+      senderConfigured: Boolean(process.env.AFROMESSAGE_SENDER_NAMES),
+      identifierConfigured: Boolean(process.env.AFROMESSAGE_IDENTIFIER_ID),
+      phoneFormat: to.startsWith("09") ? "ethiopian-local" : "other"
+    })
+  );
+  if (!apiKey) {
+    console.error("[SMS] AfroMessage send skipped: AFROMESSAGE_TOKEN is not configured");
     return { success: false, error: "AFROMESSAGE_TOKEN not configured" };
   }
-  const to = phone.trim();
   try {
-    const response = await smsApi.sendSms({ to, message });
-    console.log("\u{1F4F1} Afro response:", JSON.stringify(response));
-    const acknowledged = response?.acknowledge === "success" || response?.status === "success" || response?.response?.message_id || response?.message_id;
-    if (acknowledged) {
-      return {
-        success: true,
-        messageId: response?.response?.message_id || response?.message_id || void 0,
-        raw: response
-      };
+    const response = await getSmsApi().sendSms({ to, message });
+    const providerResponse = response.response;
+    const messageId = providerResponse?.message_id?.trim();
+    const providerStatus = providerResponse?.status?.trim().toLowerCase();
+    const rejectedStatuses = /* @__PURE__ */ new Set(["failure", "failed", "error", "rejected", "denied"]);
+    console.warn(
+      "[SMS] AfroMessage response",
+      JSON.stringify({
+        acknowledge: response.acknowledge,
+        providerStatus: providerStatus || null,
+        hasMessageId: Boolean(messageId)
+      })
+    );
+    if (response.acknowledge === "success" && messageId && !rejectedStatuses.has(providerStatus || "")) {
+      return { success: true, messageId };
     }
-    return { success: false, error: JSON.stringify(response), raw: response };
+    const error = response.error || (rejectedStatuses.has(providerStatus || "") ? `AfroMessage rejected the SMS with status "${providerStatus}"` : "AfroMessage returned no message ID; send was not confirmed");
+    console.error("[SMS] AfroMessage did not accept the SMS:", error);
+    return { success: false, error };
   } catch (error) {
-    const errMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Unknown SMS provider error";
-    console.error("\u{1F4F1} Afro send failed:", errMsg, error?.response?.data);
-    return { success: false, error: errMsg, raw: error?.response?.data };
+    const message2 = error instanceof Error ? error.message : String(error);
+    console.error("[SMS] AfroMessage request failed:", message2);
+    return { success: false, error: message2 || "Unknown SMS provider error" };
   }
 }
 
@@ -2410,11 +2441,14 @@ apiRouter.post(
 );
 apiRouter.post(
   "/admin/sms/campaign",
+  (_req, _res, next) => {
+    console.warn("[SMS] ROUTE_MARKER=sms-campaign-v3");
+    next();
+  },
   authenticateJWT,
   loadAdminContext,
   requirePermission("sms"),
   asyncRoute(async (req, res) => {
-    console.log("\u{1F6A8} SMS ROUTE VERSION 2.0 EXECUTED \u2014 campaignName =", req.body.campaignName || req.body.name || "NONE");
     const message = String(req.body.message || "");
     if (!message) return fail(res, "Message is required", 400);
     const campaignName = String(req.body.name || req.body.campaignName || "Untitled Campaign");
@@ -2447,12 +2481,12 @@ apiRouter.post(
     if (recipients.length === 0) {
       return fail(res, "No recipients matched the selected filter", 400);
     }
-    let delivered = 0;
+    let sent = 0;
     let failed = 0;
     const errors = [];
     for (const recipient of recipients) {
       const result = await sendSingleSms(recipient.phone, message);
-      const status = result.success ? "Delivered" : "Failed";
+      const status = result.success ? "Sent" : "Failed";
       try {
         await dbOperations.createSmsLog({
           phone: recipient.phone,
@@ -2464,19 +2498,22 @@ apiRouter.post(
       } catch (logErr) {
         console.error("Failed to write sms_log:", logErr);
       }
-      if (result.success) delivered++;
+      if (result.success) sent++;
       else {
         failed++;
         if (errors.length < 5 && result.error) errors.push(result.error);
       }
       await new Promise((r) => setTimeout(r, 100));
     }
+    if (sent + failed !== recipients.length) {
+      throw new Error("SMS campaign result count does not match recipient count");
+    }
     return send(res, {
       campaignName,
       recipientType,
       targetFilter,
       totalRecipients: recipients.length,
-      delivered,
+      sent,
       failed,
       sampleErrors: errors
     });
@@ -2502,7 +2539,10 @@ apiRouter.get(
         COUNT(*)::int AS recipients_count,
         MAX(sent_at) AS sent_date,
         CASE
-          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Partial'
+          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0
+            AND COUNT(*) FILTER (WHERE status IN ('Sent', 'Delivered')) > 0 THEN 'Partial'
+          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Failed'
+          WHEN COUNT(*) FILTER (WHERE status = 'Sent') > 0 THEN 'Sent'
           WHEN COUNT(*) FILTER (WHERE status = 'Delivered') > 0 THEN 'Delivered'
           ELSE 'Failed'
         END AS status
@@ -3706,6 +3746,26 @@ var openApiSpec = {
         responses: { 200: { description: "List of SMS campaigns" } }
       }
     },
+    "/admin/sms/campaigns/{name}/recipients": {
+      get: {
+        summary: "Get recipients for an SMS campaign",
+        tags: ["Admin SMS"],
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "name",
+            in: "path",
+            required: true,
+            schema: { type: "string" }
+          }
+        ],
+        responses: {
+          200: {
+            description: "Campaign recipients with send status and timestamps"
+          }
+        }
+      }
+    },
     // ============================================================
     // ADMIN EXCHANGE RATE
     // ============================================================
@@ -4225,6 +4285,7 @@ async function startServer() {
           "DELETE /api/admin/subscribers/bulk-delete",
           "POST /api/admin/sms/campaign",
           "GET /api/admin/sms/campaigns",
+          "GET /api/admin/sms/campaigns/:name/recipients",
           "GET /api/admin/users",
           "POST /api/admin/users",
           "PUT /api/admin/users/:id",
