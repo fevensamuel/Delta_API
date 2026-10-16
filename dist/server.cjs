@@ -2414,6 +2414,7 @@ apiRouter.post(
   loadAdminContext,
   requirePermission("sms"),
   asyncRoute(async (req, res) => {
+    console.log("\u{1F6A8} SMS ROUTE VERSION 2.0 EXECUTED \u2014 campaignName =", req.body.campaignName || req.body.name || "NONE");
     const message = String(req.body.message || "");
     if (!message) return fail(res, "Message is required", 400);
     const campaignName = String(req.body.name || req.body.campaignName || "Untitled Campaign");
