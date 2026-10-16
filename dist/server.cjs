@@ -158,6 +158,7 @@ async function testConnection() {
   }
 }
 async function createTables(client) {
+  console.log("\u{1F535} createTables: running CREATE TABLE IF NOT EXISTS block");
   await client.query(`
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -252,8 +253,9 @@ async function createTables(client) {
       id TEXT PRIMARY KEY,
       phone TEXT NOT NULL,
       message TEXT NOT NULL,
-      status TEXT DEFAULT 'Delivered',
+      status TEXT DEFAULT 'Pending',
       campaign_name TEXT,
+      error_message TEXT,
       sent_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -371,6 +373,29 @@ async function createTables(client) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  console.log("\u{1F535} Running SMS-specific migrations");
+  try {
+    await client.query(`ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
+    console.log("\u2705 sms_logs.error_message column ensured");
+  } catch (err) {
+    console.error("\u274C Failed to add error_message column:", err?.message);
+    throw err;
+  }
+  try {
+    await client.query(`ALTER TABLE sms_logs ALTER COLUMN status SET DEFAULT 'Pending';`);
+    console.log("\u2705 sms_logs.status default set to Pending");
+  } catch (err) {
+    console.error("\u274C Failed to change status default:", err?.message);
+  }
+  try {
+    const result = await client.query(
+      `UPDATE sms_logs SET status = 'Legacy' WHERE campaign_name IS NULL AND status = 'Delivered';`
+    );
+    console.log(`\u2705 Marked ${result.rowCount || 0} legacy sms_logs rows`);
+  } catch (err) {
+    console.error("\u274C Failed to mark legacy rows:", err?.message);
+  }
+  console.log("\u{1F535} Running general migrations");
   await client.query(`
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
@@ -416,7 +441,7 @@ async function createTables(client) {
     ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
 
     ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS campaign_name TEXT;
-    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Delivered';
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Pending';
 
     ALTER TABLE faqs ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
@@ -469,9 +494,6 @@ async function createTables(client) {
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS preferred_airline TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
-
-     -- \u2705 SMS error tracking (added 2026-10-15 for Afro Messages integration)
-    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
   `);
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
   await client.query(`
@@ -503,9 +525,12 @@ async function createTables(client) {
     ALTER TABLE flight_inquiries ALTER COLUMN status SET DEFAULT 'New';
     ALTER TABLE flight_inquiries ALTER COLUMN trip_type SET DEFAULT 'One Way';
   `);
+  console.log("\u2705 createTables: all migrations complete");
 }
 async function initDatabase() {
+  console.log("\u{1F535} initDatabase STARTED");
   const client = await pool.connect();
+  console.log("\u{1F535} initDatabase: connected to pool");
   try {
     await createTables(client);
     const existingAdmins = await client.query("SELECT COUNT(*) FROM admin_users");
@@ -522,6 +547,10 @@ async function initDatabase() {
       console.log("\u2705 Admin users already exist, skipping seed");
     }
     console.log("\u2705 PostgreSQL tables initialized and migrations applied");
+  } catch (err) {
+    console.error("\u274C initDatabase FAILED:", err?.message || err);
+    console.error("\u274C Stack:", err?.stack);
+    throw err;
   } finally {
     client.release();
   }
@@ -1285,7 +1314,6 @@ async function fetchFreshExchangeRate() {
       isFallback: false,
       fetchedAtMs: nowMs
     };
-    console.log(`[ExchangeRateService] \u2705 Success: Fetched live rate (1 USD = ${formattedRate} ETB, Source: ${source})`);
     return {
       rate: cachedRateData.rate,
       updatedAt: cachedRateData.updatedAt,

@@ -55,12 +55,6 @@ const json = (value: unknown, fallback: any[] = []): any[] => {
   return (value as any) ?? fallback;
 };
 
-/**
- * Normalize an opt-in value that may arrive as:
- *   boolean (true/false)
- *   string ('Active', 'Opt-out', 'true', 'false', 'yes', 'no', '1', '0')
- *   undefined / null (returns undefined so updateEntity skips it)
- */
 const normalizeOptIn = (value: any): boolean | undefined => {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'boolean') return value;
@@ -80,16 +74,14 @@ const normalizeOptIn = (value: any): boolean | undefined => {
   return Boolean(value);
 };
 
-/** Safely coerce an admin permissions value into a JSON array. */
 const normalizePermissions = (value: any): string[] => {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === 'string') {
-    // Accept either valid JSON array or comma-separated list
     try {
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) return parsed.map(String);
     } catch {
-      // fall through to comma split
+      /* fall through */
     }
     return value
       .split(',')
@@ -167,6 +159,7 @@ export async function testConnection(): Promise<boolean> {
 // TABLE CREATION + MIGRATIONS
 // ============================================================
 async function createTables(client: PoolClient) {
+  console.log('🔵 createTables: running CREATE TABLE IF NOT EXISTS block');
   await client.query(`
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -261,8 +254,9 @@ async function createTables(client: PoolClient) {
       id TEXT PRIMARY KEY,
       phone TEXT NOT NULL,
       message TEXT NOT NULL,
-      status TEXT DEFAULT 'Delivered',
+      status TEXT DEFAULT 'Pending',
       campaign_name TEXT,
+      error_message TEXT,
       sent_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -381,7 +375,34 @@ async function createTables(client: PoolClient) {
     );
   `);
 
-  // Safe migrations
+  // ---- SMS-specific migrations — run FIRST so they always execute ----
+  console.log('🔵 Running SMS-specific migrations');
+  try {
+    await client.query(`ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
+    console.log('✅ sms_logs.error_message column ensured');
+  } catch (err: any) {
+    console.error('❌ Failed to add error_message column:', err?.message);
+    throw err;
+  }
+
+  try {
+    await client.query(`ALTER TABLE sms_logs ALTER COLUMN status SET DEFAULT 'Pending';`);
+    console.log('✅ sms_logs.status default set to Pending');
+  } catch (err: any) {
+    console.error('❌ Failed to change status default:', err?.message);
+  }
+
+  try {
+    const result = await client.query(
+      `UPDATE sms_logs SET status = 'Legacy' WHERE campaign_name IS NULL AND status = 'Delivered';`
+    );
+    console.log(`✅ Marked ${result.rowCount || 0} legacy sms_logs rows`);
+  } catch (err: any) {
+    console.error('❌ Failed to mark legacy rows:', err?.message);
+  }
+
+  // ---- General safe migrations ----
+  console.log('🔵 Running general migrations');
   await client.query(`
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
@@ -427,7 +448,7 @@ async function createTables(client: PoolClient) {
     ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
 
     ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS campaign_name TEXT;
-    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Delivered';
+    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Pending';
 
     ALTER TABLE faqs ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 
@@ -480,9 +501,6 @@ async function createTables(client: PoolClient) {
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS preferred_airline TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
     ALTER TABLE flight_inquiries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New';
-
-     -- ✅ SMS error tracking (added 2026-10-15 for Afro Messages integration)
-    ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
   `);
 
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
@@ -517,13 +535,17 @@ async function createTables(client: PoolClient) {
     ALTER TABLE flight_inquiries ALTER COLUMN status SET DEFAULT 'New';
     ALTER TABLE flight_inquiries ALTER COLUMN trip_type SET DEFAULT 'One Way';
   `);
+
+  console.log('✅ createTables: all migrations complete');
 }
 
 // ============================================================
 // DATABASE INITIALIZATION + SEED ADMIN
 // ============================================================
 export async function initDatabase(): Promise<void> {
+  console.log('🔵 initDatabase STARTED');
   const client = await pool.connect();
+  console.log('🔵 initDatabase: connected to pool');
   try {
     await createTables(client);
 
@@ -542,6 +564,10 @@ export async function initDatabase(): Promise<void> {
     }
 
     console.log('✅ PostgreSQL tables initialized and migrations applied');
+  } catch (err: any) {
+    console.error('❌ initDatabase FAILED:', err?.message || err);
+    console.error('❌ Stack:', err?.stack);
+    throw err;
   } finally {
     client.release();
   }
@@ -853,16 +879,16 @@ export const dbOperations = {
   },
 
   async bulkImportSubscribers(items: any[]) {
-  const results = await Promise.allSettled(
-    items.map((item) => this.createSubscriber(item))
-  );
-  const added = results.filter((r) => r.status === 'fulfilled').length;
-  const failed = results.length - added;
-  if (failed > 0) {
-    console.warn(`⚠️ Bulk import: ${added} succeeded, ${failed} failed`);
-  }
-  return { added, updated: 0, failed };
-},
+    const results = await Promise.allSettled(
+      items.map((item) => this.createSubscriber(item))
+    );
+    const added = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - added;
+    if (failed > 0) {
+      console.warn(`⚠️ Bulk import: ${added} succeeded, ${failed} failed`);
+    }
+    return { added, updated: 0, failed };
+  },
 
   // ---------- INQUIRIES ----------
   getAllInquiries: list('inquiries'),
@@ -1098,16 +1124,16 @@ export const dbOperations = {
   // ---------- SMS LOGS ----------
   getAllSmsLogs: list('sms_logs', 'sent_at DESC'),
   createSmsLog: (data: any) =>
-  createEntity(
-    'sms_logs',
-    {
-      ...data,
-      campaign_name: data.campaignName,
-      error_message: data.errorMessage,
-    },
-    ['phone', 'message', 'status', 'campaign_name', 'error_message'],
-    'sms'
-  ),
+    createEntity(
+      'sms_logs',
+      {
+        ...data,
+        campaign_name: data.campaignName,
+        error_message: data.errorMessage,
+      },
+      ['phone', 'message', 'status', 'campaign_name', 'error_message'],
+      'sms'
+    ),
 
   // ---------- ADMIN USERS ----------
   getAllAdminUsers: list('admin_users', 'created_at ASC'),

@@ -72,7 +72,7 @@ async function fetchFreshExchangeRate(): Promise<ExchangeRateData> {
       fetchedAtMs: nowMs
     };
 
-    console.log(`[ExchangeRateService] ✅ Success: Fetched live rate (1 USD = ${formattedRate} ETB, Source: ${source})`);
+   // console.log(`[ExchangeRateService] ✅ Success: Fetched live rate (1 USD = ${formattedRate} ETB, Source: ${source})`);
 
     return {
       rate: cachedRateData.rate,
