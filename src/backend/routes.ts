@@ -2,6 +2,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { dbOperations as db } from './database.js';
+import { pool } from './database.js';
 import { getExchangeRate, setAdminOverrideRate } from '../services/exchangeRateService.js';
 import { sendSingleSms } from '../services/afroSmsService.js';
 import {
@@ -1029,9 +1030,8 @@ apiRouter.post(
 // ============================================================
 // SMS
 // ============================================================
-import { sendSingleSms } from '../services/afroSmsService.js';
-// ... other imports
 
+// ---- POST /admin/sms/campaign — Send a campaign ----
 apiRouter.post(
   '/admin/sms/campaign',
   authenticateJWT,
@@ -1128,9 +1128,60 @@ apiRouter.post(
   })
 );
 
-const smsLogs = asyncRoute(async (_req, res) => send(res, await db.getAllSmsLogs()));
-apiRouter.get('/admin/sms/logs', authenticateJWT, loadAdminContext, requirePermission('sms'), smsLogs);
-apiRouter.get('/admin/sms/campaigns', authenticateJWT, loadAdminContext, requirePermission('sms'), smsLogs);
+// ---- GET /admin/sms/logs — Raw SMS log rows ----
+apiRouter.get(
+  '/admin/sms/logs',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('sms'),
+  asyncRoute(async (_req, res) => send(res, await db.getAllSmsLogs()))
+);
+
+// ---- GET /admin/sms/campaigns — Grouped campaign summaries ----
+apiRouter.get(
+  '/admin/sms/campaigns',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('sms'),
+  asyncRoute(async (_req, res) => {
+    const result = await pool.query(`
+      SELECT
+        campaign_name AS name,
+        MIN(message) AS message,
+        COUNT(*)::int AS recipients_count,
+        MAX(sent_at) AS sent_date,
+        CASE
+          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Partial'
+          WHEN COUNT(*) FILTER (WHERE status = 'Delivered') > 0 THEN 'Delivered'
+          ELSE 'Failed'
+        END AS status
+      FROM sms_logs
+      WHERE campaign_name IS NOT NULL AND campaign_name <> ''
+      GROUP BY campaign_name
+      ORDER BY MAX(sent_at) DESC
+    `);
+    return send(res, result.rows);
+  })
+);
+
+// ---- GET /admin/sms/campaigns/:name/recipients — Recipients for one campaign ----
+apiRouter.get(
+  '/admin/sms/campaigns/:name/recipients',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('sms'),
+  asyncRoute(async (req, res) => {
+    const name = req.params.name;
+    const result = await pool.query(
+      `SELECT phone, status, error_message, sent_at
+       FROM sms_logs
+       WHERE campaign_name = $1
+       ORDER BY sent_at ASC`,
+      [name]
+    );
+    return send(res, result.rows);
+  })
+);
 
 // ============================================================
 // DASHBOARD

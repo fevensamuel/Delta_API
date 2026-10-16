@@ -1359,6 +1359,40 @@ function initExchangeRateService() {
   }, cacheDurationMs);
 }
 
+// src/services/afroSmsService.ts
+var import_afromessage = __toESM(require("afromessage"), 1);
+var smsApi = import_afromessage.default.getInstance({
+  apiKey: process.env.AFROMESSAGE_TOKEN || "",
+  senderName: process.env.AFROMESSAGE_SENDER_NAMES || "",
+  identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || ""
+});
+async function sendSingleSms(phone, message) {
+  if (!phone) {
+    return { success: false, error: "Missing phone number" };
+  }
+  if (!process.env.AFROMESSAGE_TOKEN) {
+    return { success: false, error: "AFROMESSAGE_TOKEN not configured" };
+  }
+  const to = phone.trim();
+  try {
+    const response = await smsApi.sendSms({ to, message });
+    console.log("\u{1F4F1} Afro response:", JSON.stringify(response));
+    const acknowledged = response?.acknowledge === "success" || response?.status === "success" || response?.response?.message_id || response?.message_id;
+    if (acknowledged) {
+      return {
+        success: true,
+        messageId: response?.response?.message_id || response?.message_id || void 0,
+        raw: response
+      };
+    }
+    return { success: false, error: JSON.stringify(response), raw: response };
+  } catch (error) {
+    const errMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Unknown SMS provider error";
+    console.error("\u{1F4F1} Afro send failed:", errMsg, error?.response?.data);
+    return { success: false, error: errMsg, raw: error?.response?.data };
+  }
+}
+
 // src/config/multer.ts
 var import_multer = __toESM(require("multer"), 1);
 var import_path = __toESM(require("path"), 1);
@@ -1522,40 +1556,6 @@ var requirePermission = (permissionKey) => {
     next();
   };
 };
-
-// src/services/afroSmsService.ts
-var import_afromessage = __toESM(require("afromessage"), 1);
-var smsApi = import_afromessage.default.getInstance({
-  apiKey: process.env.AFROMESSAGE_TOKEN || "",
-  senderName: process.env.AFROMESSAGE_SENDER_NAMES || "",
-  identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || ""
-});
-async function sendSingleSms(phone, message) {
-  if (!phone) {
-    return { success: false, error: "Missing phone number" };
-  }
-  if (!process.env.AFROMESSAGE_TOKEN) {
-    return { success: false, error: "AFROMESSAGE_TOKEN not configured" };
-  }
-  const to = phone.trim();
-  try {
-    const response = await smsApi.sendSms({ to, message });
-    console.log("\u{1F4F1} Afro response:", JSON.stringify(response));
-    const acknowledged = response?.acknowledge === "success" || response?.status === "success" || response?.response?.message_id || response?.message_id;
-    if (acknowledged) {
-      return {
-        success: true,
-        messageId: response?.response?.message_id || response?.message_id || void 0,
-        raw: response
-      };
-    }
-    return { success: false, error: JSON.stringify(response), raw: response };
-  } catch (error) {
-    const errMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Unknown SMS provider error";
-    console.error("\u{1F4F1} Afro send failed:", errMsg, error?.response?.data);
-    return { success: false, error: errMsg, raw: error?.response?.data };
-  }
-}
 
 // src/backend/routes.ts
 var apiRouter = (0, import_express.Router)();
@@ -2467,9 +2467,55 @@ apiRouter.post(
     });
   })
 );
-var smsLogs = asyncRoute(async (_req, res) => send(res, await dbOperations.getAllSmsLogs()));
-apiRouter.get("/admin/sms/logs", authenticateJWT, loadAdminContext, requirePermission("sms"), smsLogs);
-apiRouter.get("/admin/sms/campaigns", authenticateJWT, loadAdminContext, requirePermission("sms"), smsLogs);
+apiRouter.get(
+  "/admin/sms/logs",
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission("sms"),
+  asyncRoute(async (_req, res) => send(res, await dbOperations.getAllSmsLogs()))
+);
+apiRouter.get(
+  "/admin/sms/campaigns",
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission("sms"),
+  asyncRoute(async (_req, res) => {
+    const result = await pool.query(`
+      SELECT
+        campaign_name AS name,
+        MIN(message) AS message,
+        COUNT(*)::int AS recipients_count,
+        MAX(sent_at) AS sent_date,
+        CASE
+          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Partial'
+          WHEN COUNT(*) FILTER (WHERE status = 'Delivered') > 0 THEN 'Delivered'
+          ELSE 'Failed'
+        END AS status
+      FROM sms_logs
+      WHERE campaign_name IS NOT NULL AND campaign_name <> ''
+      GROUP BY campaign_name
+      ORDER BY MAX(sent_at) DESC
+    `);
+    return send(res, result.rows);
+  })
+);
+apiRouter.get(
+  "/admin/sms/campaigns/:name/recipients",
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission("sms"),
+  asyncRoute(async (req, res) => {
+    const name = req.params.name;
+    const result = await pool.query(
+      `SELECT phone, status, error_message, sent_at
+       FROM sms_logs
+       WHERE campaign_name = $1
+       ORDER BY sent_at ASC`,
+      [name]
+    );
+    return send(res, result.rows);
+  })
+);
 apiRouter.get(
   "/admin/dashboard/stats",
   authenticateJWT,
