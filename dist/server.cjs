@@ -373,28 +373,6 @@ async function createTables(client) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
-  console.log("\u{1F535} Running SMS-specific migrations");
-  try {
-    await client.query(`ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
-    console.log("\u2705 sms_logs.error_message column ensured");
-  } catch (err) {
-    console.error("\u274C Failed to add error_message column:", err?.message);
-    throw err;
-  }
-  try {
-    await client.query(`ALTER TABLE sms_logs ALTER COLUMN status SET DEFAULT 'Pending';`);
-    console.log("\u2705 sms_logs.status default set to Pending");
-  } catch (err) {
-    console.error("\u274C Failed to change status default:", err?.message);
-  }
-  try {
-    const result = await client.query(
-      `UPDATE sms_logs SET status = 'Legacy' WHERE campaign_name IS NULL AND status = 'Delivered';`
-    );
-    console.log(`\u2705 Marked ${result.rowCount || 0} legacy sms_logs rows`);
-  } catch (err) {
-    console.error("\u274C Failed to mark legacy rows:", err?.message);
-  }
   console.log("\u{1F535} Running general migrations");
   await client.query(`
     ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb;
@@ -532,6 +510,19 @@ async function initDatabase() {
   const client = await pool.connect();
   console.log("\u{1F535} initDatabase: connected to pool");
   try {
+    console.log("\u{1F535} Running SMS migration (pre-createTables)");
+    try {
+      await client.query(`ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
+      console.log("\u2705 sms_logs.error_message column ensured");
+    } catch (e) {
+      console.error("\u274C error_message migration failed:", e?.message);
+    }
+    try {
+      await client.query(`ALTER TABLE sms_logs ALTER COLUMN status SET DEFAULT 'Pending';`);
+      console.log("\u2705 sms_logs.status default set to Pending");
+    } catch (e) {
+      console.error("\u274C status default migration failed:", e?.message);
+    }
     await createTables(client);
     const existingAdmins = await client.query("SELECT COUNT(*) FROM admin_users");
     if (Number(existingAdmins.rows[0].count) === 0) {
@@ -1277,17 +1268,16 @@ async function fetchFreshExchangeRate() {
   const apiUrl = process.env.EXCHANGE_RATE_API_URL || "https://api.budjet.org/fiat/USD/ETB";
   const fallbackRate = parseFloat(process.env.EXCHANGE_RATE_FALLBACK || "159.98");
   const nowMs = Date.now();
-  console.log(`[ExchangeRateService] Attempting to fetch real-time exchange rate from ${apiUrl}...`);
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5e3);
     const res = await fetch(apiUrl, {
-      headers: { "Accept": "application/json" },
+      headers: { Accept: "application/json" },
       signal: controller.signal
     });
     clearTimeout(timeoutId);
     if (!res.ok) {
-      throw new Error(`Exchange rate API responded with status ${res.status}`);
+      throw new Error(`status ${res.status}`);
     }
     const data = await res.json();
     let rate = null;
@@ -1303,7 +1293,7 @@ async function fetchFreshExchangeRate() {
       rate = data.result.ETB;
     }
     if (!rate || typeof rate !== "number" || isNaN(rate) || rate <= 0) {
-      throw new Error("Received invalid or empty exchange rate value from API");
+      throw new Error("invalid rate");
     }
     const formattedRate = Math.round(rate * 100) / 100;
     const isoNow = (/* @__PURE__ */ new Date()).toISOString();
@@ -1320,8 +1310,7 @@ async function fetchFreshExchangeRate() {
       source: cachedRateData.source,
       isFallback: cachedRateData.isFallback
     };
-  } catch (error) {
-    console.error(`[ExchangeRateService] \u274C Error fetching exchange rate (${error.message}). Using fallback rate (${fallbackRate} ETB).`);
+  } catch {
     const isoNow = (/* @__PURE__ */ new Date()).toISOString();
     cachedRateData = {
       rate: fallbackRate,
@@ -1370,19 +1359,16 @@ async function getExchangeRate(forceRefresh = false) {
 function initExchangeRateService() {
   const cacheDurationSeconds = parseInt(process.env.EXCHANGE_RATE_CACHE_DURATION || "3600", 10);
   const cacheDurationMs = cacheDurationSeconds * 1e3;
-  console.log(`[ExchangeRateService] Initializing service (Cache duration: ${cacheDurationSeconds}s)...`);
-  getExchangeRate(true).catch((err) => {
-    console.error(`[ExchangeRateService] Initial fetch failed: ${err.message}`);
+  console.log(`[ExchangeRateService] Initialized (refresh every ${cacheDurationSeconds}s)`);
+  getExchangeRate(true).catch(() => {
   });
   if (refreshTimer) {
     clearInterval(refreshTimer);
   }
   refreshTimer = setInterval(async () => {
-    console.log("[ExchangeRateService] Automatic 1-hour scheduled background refresh starting...");
     try {
       await getExchangeRate(true);
-    } catch (err) {
-      console.error(`[ExchangeRateService] Scheduled refresh error: ${err.message}`);
+    } catch {
     }
   }, cacheDurationMs);
 }

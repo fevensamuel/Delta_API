@@ -375,32 +375,6 @@ async function createTables(client: PoolClient) {
     );
   `);
 
-  // ---- SMS-specific migrations — run FIRST so they always execute ----
-  console.log('🔵 Running SMS-specific migrations');
-  try {
-    await client.query(`ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
-    console.log('✅ sms_logs.error_message column ensured');
-  } catch (err: any) {
-    console.error('❌ Failed to add error_message column:', err?.message);
-    throw err;
-  }
-
-  try {
-    await client.query(`ALTER TABLE sms_logs ALTER COLUMN status SET DEFAULT 'Pending';`);
-    console.log('✅ sms_logs.status default set to Pending');
-  } catch (err: any) {
-    console.error('❌ Failed to change status default:', err?.message);
-  }
-
-  try {
-    const result = await client.query(
-      `UPDATE sms_logs SET status = 'Legacy' WHERE campaign_name IS NULL AND status = 'Delivered';`
-    );
-    console.log(`✅ Marked ${result.rowCount || 0} legacy sms_logs rows`);
-  } catch (err: any) {
-    console.error('❌ Failed to mark legacy rows:', err?.message);
-  }
-
   // ---- General safe migrations ----
   console.log('🔵 Running general migrations');
   await client.query(`
@@ -546,7 +520,24 @@ export async function initDatabase(): Promise<void> {
   console.log('🔵 initDatabase STARTED');
   const client = await pool.connect();
   console.log('🔵 initDatabase: connected to pool');
+
   try {
+    // ✅ Run SMS-specific migrations FIRST — before anything else can fail
+    console.log('🔵 Running SMS migration (pre-createTables)');
+    try {
+      await client.query(`ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS error_message TEXT;`);
+      console.log('✅ sms_logs.error_message column ensured');
+    } catch (e: any) {
+      console.error('❌ error_message migration failed:', e?.message);
+    }
+    try {
+      await client.query(`ALTER TABLE sms_logs ALTER COLUMN status SET DEFAULT 'Pending';`);
+      console.log('✅ sms_logs.status default set to Pending');
+    } catch (e: any) {
+      console.error('❌ status default migration failed:', e?.message);
+    }
+
+    // Now the rest of the general migrations
     await createTables(client);
 
     const existingAdmins = await client.query('SELECT COUNT(*) FROM admin_users');

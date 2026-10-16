@@ -1,6 +1,8 @@
 /**
  * Exchange Rate Service for Delta Travel & Tour
  * Fetches real-time USD to ETB exchange rate with in-memory caching, automatic hourly background refresh, and fallback support.
+ *
+ * LOGGING: Silenced to keep stderr.log readable. Only a single init line logs on boot.
  */
 
 export interface ExchangeRateData {
@@ -19,33 +21,31 @@ let refreshTimer: NodeJS.Timeout | null = null;
 
 /**
  * Fetches a fresh exchange rate from the configured API or falls back if request fails.
+ * Errors are swallowed silently — the fallback rate is used without logging.
  */
 async function fetchFreshExchangeRate(): Promise<ExchangeRateData> {
   const apiUrl = process.env.EXCHANGE_RATE_API_URL || 'https://api.budjet.org/fiat/USD/ETB';
   const fallbackRate = parseFloat(process.env.EXCHANGE_RATE_FALLBACK || '159.98');
   const nowMs = Date.now();
 
-  console.log(`[ExchangeRateService] Attempting to fetch real-time exchange rate from ${apiUrl}...`);
-
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const res = await fetch(apiUrl, {
-      headers: { 'Accept': 'application/json' },
-      signal: controller.signal
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
     if (!res.ok) {
-      throw new Error(`Exchange rate API responded with status ${res.status}`);
+      throw new Error(`status ${res.status}`);
     }
 
     const data = await res.json();
     let rate: number | null = null;
     let source = 'budjet.org';
 
-    // Parse primary budjet.org response format: { "status": "success", "rate": 159.98 }
     if (typeof data?.rate === 'number') {
       rate = data.rate;
     } else if (typeof data?.data?.rate === 'number') {
@@ -58,7 +58,7 @@ async function fetchFreshExchangeRate(): Promise<ExchangeRateData> {
     }
 
     if (!rate || typeof rate !== 'number' || isNaN(rate) || rate <= 0) {
-      throw new Error('Received invalid or empty exchange rate value from API');
+      throw new Error('invalid rate');
     }
 
     const formattedRate = Math.round(rate * 100) / 100;
@@ -69,34 +69,31 @@ async function fetchFreshExchangeRate(): Promise<ExchangeRateData> {
       updatedAt: isoNow,
       source,
       isFallback: false,
-      fetchedAtMs: nowMs
+      fetchedAtMs: nowMs,
     };
-
-   // console.log(`[ExchangeRateService] ✅ Success: Fetched live rate (1 USD = ${formattedRate} ETB, Source: ${source})`);
 
     return {
       rate: cachedRateData.rate,
       updatedAt: cachedRateData.updatedAt,
       source: cachedRateData.source,
-      isFallback: cachedRateData.isFallback
+      isFallback: cachedRateData.isFallback,
     };
-  } catch (error: any) {
-    console.error(`[ExchangeRateService] ❌ Error fetching exchange rate (${error.message}). Using fallback rate (${fallbackRate} ETB).`);
-
+  } catch {
+    // Silent fallback — no logging
     const isoNow = new Date().toISOString();
     cachedRateData = {
       rate: fallbackRate,
       updatedAt: isoNow,
       source: 'fallback',
       isFallback: true,
-      fetchedAtMs: nowMs
+      fetchedAtMs: nowMs,
     };
 
     return {
       rate: cachedRateData.rate,
       updatedAt: cachedRateData.updatedAt,
       source: cachedRateData.source,
-      isFallback: cachedRateData.isFallback
+      isFallback: cachedRateData.isFallback,
     };
   }
 }
@@ -111,14 +108,14 @@ export function setAdminOverrideRate(rate: number): ExchangeRateData {
     updatedAt: isoNow,
     source: 'admin_override',
     isFallback: false,
-    fetchedAtMs: Date.now()
+    fetchedAtMs: Date.now(),
   };
 
   return {
     rate: cachedRateData.rate,
     updatedAt: cachedRateData.updatedAt,
     source: cachedRateData.source,
-    isFallback: cachedRateData.isFallback
+    isFallback: cachedRateData.isFallback,
   };
 }
 
@@ -129,12 +126,12 @@ export async function getExchangeRate(forceRefresh = false): Promise<ExchangeRat
   const cacheDurationMs = parseInt(process.env.EXCHANGE_RATE_CACHE_DURATION || '3600', 10) * 1000;
   const nowMs = Date.now();
 
-  if (!forceRefresh && cachedRateData && (nowMs - cachedRateData.fetchedAtMs) < cacheDurationMs) {
+  if (!forceRefresh && cachedRateData && nowMs - cachedRateData.fetchedAtMs < cacheDurationMs) {
     return {
       rate: cachedRateData.rate,
       updatedAt: cachedRateData.updatedAt,
       source: cachedRateData.source,
-      isFallback: cachedRateData.isFallback
+      isFallback: cachedRateData.isFallback,
     };
   }
 
@@ -149,11 +146,12 @@ export function initExchangeRateService(): void {
   const cacheDurationSeconds = parseInt(process.env.EXCHANGE_RATE_CACHE_DURATION || '3600', 10);
   const cacheDurationMs = cacheDurationSeconds * 1000;
 
-  console.log(`[ExchangeRateService] Initializing service (Cache duration: ${cacheDurationSeconds}s)...`);
+  // One-time init log — useful to confirm the service started
+  console.log(`[ExchangeRateService] Initialized (refresh every ${cacheDurationSeconds}s)`);
 
   // Initial fetch on server start
-  getExchangeRate(true).catch(err => {
-    console.error(`[ExchangeRateService] Initial fetch failed: ${err.message}`);
+  getExchangeRate(true).catch(() => {
+    // silent
   });
 
   // Set up periodic automatic background refresh every hour
@@ -162,11 +160,10 @@ export function initExchangeRateService(): void {
   }
 
   refreshTimer = setInterval(async () => {
-    console.log('[ExchangeRateService] Automatic 1-hour scheduled background refresh starting...');
     try {
       await getExchangeRate(true);
-    } catch (err: any) {
-      console.error(`[ExchangeRateService] Scheduled refresh error: ${err.message}`);
+    } catch {
+      // silent
     }
   }, cacheDurationMs);
 }
