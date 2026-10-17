@@ -162,11 +162,12 @@ async function startServer() {
   // ============================================================
   // HEALTH CHECKS
   // ============================================================
+   const BUILD_ID = '2026-10-17-a'; // change this value on every deploy
   app.get('/health', (req, res) => {
-    res.json({ status: 'ok', service: 'Delta Travel API Backend', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', build: BUILD_ID, service: 'Delta Travel API Backend', timestamp: new Date().toISOString() });
   });
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', service: 'Delta Travel API Backend', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', build: BUILD_ID, service: 'Delta Travel API Backend', timestamp: new Date().toISOString() });
   });
 
   // ============================================================

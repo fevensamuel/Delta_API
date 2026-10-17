@@ -4235,11 +4235,12 @@ async function startServer() {
   app.use("/uploads/office", import_express2.default.static(officePath2, { setHeaders: setFileHeaders }));
   app.use("/uploads/audio", staticCors);
   app.use("/uploads/audio", import_express2.default.static(audioPath2, { setHeaders: setFileHeaders }));
+  const BUILD_ID = "2026-10-17-a";
   app.get("/health", (req, res) => {
-    res.json({ status: "ok", service: "Delta Travel API Backend", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+    res.json({ status: "ok", build: BUILD_ID, service: "Delta Travel API Backend", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   });
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", service: "Delta Travel API Backend", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+    res.json({ status: "ok", build: BUILD_ID, service: "Delta Travel API Backend", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   });
   app.get("/", (req, res) => {
     res.json({
