@@ -1374,11 +1374,12 @@ function initExchangeRateService() {
 }
 
 // src/services/afroSmsService.ts
-var import_afromessage = __toESM(require("afromessage"), 1);
+var AfromessageModule = __toESM(require("afromessage"), 1);
+var Afromessage = AfromessageModule.default || AfromessageModule;
 var smsApi;
 var getSmsApi = () => {
   if (!smsApi) {
-    smsApi = import_afromessage.default.getInstance({
+    smsApi = Afromessage.getInstance({
       apiKey: process.env.AFROMESSAGE_TOKEN || "",
       senderName: process.env.AFROMESSAGE_SENDER_NAMES || "",
       identifierId: process.env.AFROMESSAGE_IDENTIFIER_ID || ""
@@ -1413,12 +1414,13 @@ async function sendSingleSms(phone, message) {
   }
   try {
     const response = await getSmsApi().sendSms({ to, message });
-    const providerResponse = response.response;
+    console.log("\u{1F4F1} Afro raw response:", JSON.stringify(response, null, 2));
+    const providerResponse = response.response || {};
     const messageId = providerResponse?.message_id?.trim();
     const providerStatus = providerResponse?.status?.trim().toLowerCase();
-    const rejectedStatuses = /* @__PURE__ */ new Set(["failure", "failed", "error", "rejected", "denied"]);
+    const rejectedStatuses = /* @__PURE__ */ new Set(["failure", "failed", "error", "rejected", "denied", "invalid"]);
     console.warn(
-      "[SMS] AfroMessage response",
+      "[SMS] AfroMessage response parsed",
       JSON.stringify({
         acknowledge: response.acknowledge,
         providerStatus: providerStatus || null,
@@ -1428,7 +1430,7 @@ async function sendSingleSms(phone, message) {
     if (response.acknowledge === "success" && messageId && !rejectedStatuses.has(providerStatus || "")) {
       return { success: true, messageId };
     }
-    const error = response.error || (rejectedStatuses.has(providerStatus || "") ? `AfroMessage rejected the SMS with status "${providerStatus}"` : "AfroMessage returned no message ID; send was not confirmed");
+    const error = response.error || response.message || (rejectedStatuses.has(providerStatus || "") ? `AfroMessage rejected the SMS with status "${providerStatus}"` : "AfroMessage returned no message ID; send was not confirmed");
     console.error("[SMS] AfroMessage did not accept the SMS:", error);
     return { success: false, error };
   } catch (error) {
