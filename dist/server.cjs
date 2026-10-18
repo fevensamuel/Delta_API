@@ -1375,10 +1375,18 @@ function initExchangeRateService() {
 
 // src/services/afroSmsService.ts
 var AfromessageModule = __toESM(require("afromessage"), 1);
-var Afromessage = AfromessageModule.default || AfromessageModule;
+var resolveAfromessage = () => {
+  let candidate = AfromessageModule;
+  for (let i = 0; i < 4; i++) {
+    if (candidate && typeof candidate.getInstance === "function") return candidate;
+    candidate = candidate?.default;
+  }
+  throw new Error("afromessage SDK export not found (getInstance missing)");
+};
 var smsApi;
 var getSmsApi = () => {
   if (!smsApi) {
+    const Afromessage = resolveAfromessage();
     smsApi = Afromessage.getInstance({
       apiKey: process.env.AFROMESSAGE_TOKEN || "",
       senderName: process.env.AFROMESSAGE_SENDER_NAMES || "",
@@ -1414,23 +1422,23 @@ async function sendSingleSms(phone, message) {
   }
   try {
     const response = await getSmsApi().sendSms({ to, message });
-    console.log("\u{1F4F1} Afro raw response:", JSON.stringify(response, null, 2));
-    const providerResponse = response.response || {};
-    const messageId = providerResponse?.message_id?.trim();
-    const providerStatus = providerResponse?.status?.trim().toLowerCase();
-    const rejectedStatuses = /* @__PURE__ */ new Set(["failure", "failed", "error", "rejected", "denied", "invalid"]);
+    console.warn("[SMS] AfroMessage raw response", JSON.stringify(response));
+    const providerResponse = response?.response;
+    const messageId = typeof providerResponse?.message_id === "string" ? providerResponse.message_id.trim() : "";
+    const providerStatus = typeof providerResponse?.status === "string" ? providerResponse.status.trim().toLowerCase() : "";
+    const rejectedStatuses = /* @__PURE__ */ new Set(["failure", "failed", "error", "rejected", "denied"]);
     console.warn(
       "[SMS] AfroMessage response parsed",
       JSON.stringify({
-        acknowledge: response.acknowledge,
+        acknowledge: response?.acknowledge,
         providerStatus: providerStatus || null,
         hasMessageId: Boolean(messageId)
       })
     );
-    if (response.acknowledge === "success" && messageId && !rejectedStatuses.has(providerStatus || "")) {
+    if (response?.acknowledge === "success" && messageId && !rejectedStatuses.has(providerStatus)) {
       return { success: true, messageId };
     }
-    const error = response.error || response.message || (rejectedStatuses.has(providerStatus || "") ? `AfroMessage rejected the SMS with status "${providerStatus}"` : "AfroMessage returned no message ID; send was not confirmed");
+    const error = response?.error || (rejectedStatuses.has(providerStatus) ? `AfroMessage rejected the SMS with status "${providerStatus}"` : `AfroMessage did not confirm the send: ${JSON.stringify(response)}`);
     console.error("[SMS] AfroMessage did not accept the SMS:", error);
     return { success: false, error };
   } catch (error) {
