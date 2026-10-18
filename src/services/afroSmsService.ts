@@ -31,6 +31,34 @@ const normalizePhone = (phone: string) => {
   return normalized;
 };
 
+// The SDK wraps the API's own reply, so the real payload is nested:
+//   { acknowledge, response: { acknowledge, response: { status, message_id, to, ... } } }
+// Walk down the `.response` chain and collect what we need from any level.
+const readProviderReply = (reply: any) => {
+  let messageId = '';
+  let status = '';
+  let failureError = '';
+  let current: any = reply;
+
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth++) {
+    if (!messageId && typeof current.message_id === 'string') {
+      messageId = current.message_id.trim();
+    }
+    if (!status && typeof current.status === 'string') {
+      status = current.status.trim().toLowerCase();
+    }
+    if (current.acknowledge === 'failure' && !failureError) {
+      failureError =
+        (typeof current.error === 'string' && current.error) ||
+        (typeof current.message === 'string' && current.message) ||
+        'AfroMessage reported failure';
+    }
+    current = current.response;
+  }
+
+  return { messageId, status, failureError };
+};
+
 export interface SendResult {
   success: boolean;
   messageId?: string;
@@ -60,42 +88,34 @@ export async function sendSingleSms(phone: string, message: string): Promise<Sen
   }
 
   try {
-    const response: any = await getSmsApi().sendSms({ to, message });
+    const reply: any = await getSmsApi().sendSms({ to, message });
 
     // Raw provider reply (contains no secrets) so we can see exactly what AfroMessage says.
-    console.warn('[SMS] AfroMessage raw response', JSON.stringify(response));
+    console.warn('[SMS] AfroMessage raw response', JSON.stringify(reply));
 
-    const providerResponse = response?.response;
-    const messageId =
-      typeof providerResponse?.message_id === 'string' ? providerResponse.message_id.trim() : '';
-    const providerStatus =
-      typeof providerResponse?.status === 'string'
-        ? providerResponse.status.trim().toLowerCase()
-        : '';
+    const { messageId, status, failureError } = readProviderReply(reply);
     const rejectedStatuses = new Set(['failure', 'failed', 'error', 'rejected', 'denied']);
 
     console.warn(
       '[SMS] AfroMessage response parsed',
       JSON.stringify({
-        acknowledge: response?.acknowledge,
-        providerStatus: providerStatus || null,
+        acknowledge: reply?.acknowledge,
+        providerStatus: status || null,
         hasMessageId: Boolean(messageId),
       })
     );
 
-    if (
-      response?.acknowledge === 'success' &&
-      messageId &&
-      !rejectedStatuses.has(providerStatus)
-    ) {
+    // Accepted = AfroMessage gave us a message ID and nothing in the reply says failure.
+    // Status text such as "Send is in progress..." is a normal accepted state.
+    if (messageId && !failureError && !rejectedStatuses.has(status)) {
       return { success: true, messageId };
     }
 
     const error =
-      response?.error ||
-      (rejectedStatuses.has(providerStatus)
-        ? `AfroMessage rejected the SMS with status "${providerStatus}"`
-        : `AfroMessage did not confirm the send: ${JSON.stringify(response)}`);
+      failureError ||
+      (rejectedStatuses.has(status)
+        ? `AfroMessage rejected the SMS with status "${status}"`
+        : `AfroMessage did not confirm the send: ${JSON.stringify(reply)}`);
     console.error('[SMS] AfroMessage did not accept the SMS:', error);
     return { success: false, error };
   } catch (error: unknown) {

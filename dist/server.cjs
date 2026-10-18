@@ -1401,6 +1401,25 @@ var normalizePhone = (phone) => {
   if (/^2519\d{8}$/.test(normalized)) return `0${normalized.slice(3)}`;
   return normalized;
 };
+var readProviderReply = (reply) => {
+  let messageId = "";
+  let status = "";
+  let failureError = "";
+  let current = reply;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
+    if (!messageId && typeof current.message_id === "string") {
+      messageId = current.message_id.trim();
+    }
+    if (!status && typeof current.status === "string") {
+      status = current.status.trim().toLowerCase();
+    }
+    if (current.acknowledge === "failure" && !failureError) {
+      failureError = typeof current.error === "string" && current.error || typeof current.message === "string" && current.message || "AfroMessage reported failure";
+    }
+    current = current.response;
+  }
+  return { messageId, status, failureError };
+};
 async function sendSingleSms(phone, message) {
   if (!phone) {
     return { success: false, error: "Missing phone number" };
@@ -1421,24 +1440,22 @@ async function sendSingleSms(phone, message) {
     return { success: false, error: "AFROMESSAGE_TOKEN not configured" };
   }
   try {
-    const response = await getSmsApi().sendSms({ to, message });
-    console.warn("[SMS] AfroMessage raw response", JSON.stringify(response));
-    const providerResponse = response?.response;
-    const messageId = typeof providerResponse?.message_id === "string" ? providerResponse.message_id.trim() : "";
-    const providerStatus = typeof providerResponse?.status === "string" ? providerResponse.status.trim().toLowerCase() : "";
+    const reply = await getSmsApi().sendSms({ to, message });
+    console.warn("[SMS] AfroMessage raw response", JSON.stringify(reply));
+    const { messageId, status, failureError } = readProviderReply(reply);
     const rejectedStatuses = /* @__PURE__ */ new Set(["failure", "failed", "error", "rejected", "denied"]);
     console.warn(
       "[SMS] AfroMessage response parsed",
       JSON.stringify({
-        acknowledge: response?.acknowledge,
-        providerStatus: providerStatus || null,
+        acknowledge: reply?.acknowledge,
+        providerStatus: status || null,
         hasMessageId: Boolean(messageId)
       })
     );
-    if (response?.acknowledge === "success" && messageId && !rejectedStatuses.has(providerStatus)) {
+    if (messageId && !failureError && !rejectedStatuses.has(status)) {
       return { success: true, messageId };
     }
-    const error = response?.error || (rejectedStatuses.has(providerStatus) ? `AfroMessage rejected the SMS with status "${providerStatus}"` : `AfroMessage did not confirm the send: ${JSON.stringify(response)}`);
+    const error = failureError || (rejectedStatuses.has(status) ? `AfroMessage rejected the SMS with status "${status}"` : `AfroMessage did not confirm the send: ${JSON.stringify(reply)}`);
     console.error("[SMS] AfroMessage did not accept the SMS:", error);
     return { success: false, error };
   } catch (error) {
