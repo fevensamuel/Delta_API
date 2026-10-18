@@ -4,7 +4,16 @@ import bcrypt from 'bcryptjs';
 import { dbOperations as db } from './database.js';
 import { pool } from './database.js';
 import { getExchangeRate, setAdminOverrideRate } from '../services/exchangeRateService.js';
-import { sendSingleSms } from '../services/afroSmsService.js';
+import crypto from 'crypto';
+import {
+  resolveRecipients,
+  dispatchCampaign,
+  scheduleCampaign,
+  cancelScheduledCampaign,
+  ensureScheduleTable,
+  processDueCampaigns,
+  type CampaignParams,
+} from '../services/smsCampaignService.js';
 import {
   galleryUploadFields,
   bulkUpload,
@@ -1031,11 +1040,11 @@ apiRouter.post(
 // SMS
 // ============================================================
 
-// ---- POST /admin/sms/campaign — Send a campaign ----
+// ---- POST /admin/sms/campaign — Send a campaign now, or schedule it ----
 apiRouter.post(
   '/admin/sms/campaign',
   (_req, _res, next) => {
-    console.warn('[SMS] ROUTE_MARKER=sms-campaign-v3');
+    console.warn('[SMS] ROUTE_MARKER=sms-campaign-v4');
     next();
   },
   authenticateJWT,
@@ -1045,93 +1054,72 @@ apiRouter.post(
     const message = String(req.body.message || '');
     if (!message) return fail(res, 'Message is required', 400);
 
-    const campaignName = String(req.body.name || req.body.campaignName || 'Untitled Campaign');
-    const recipientType = req.body.recipientType || 'subscribers';
-    const targetFilter = String(req.body.targetFilter || 'Active Opt-in');
-    const pkgId = req.body.packageInterestId || req.body.packageId;
-    const manualNumbers = String(req.body.manualNumbers || '');
+    const params: CampaignParams = {
+      campaignName: String(req.body.name || req.body.campaignName || 'Untitled Campaign'),
+      message,
+      recipientType: String(req.body.recipientType || 'subscribers'),
+      targetFilter: String(req.body.targetFilter || 'Active Opt-in'),
+      packageId: req.body.packageInterestId || req.body.packageId || null,
+      manualNumbers: String(req.body.manualNumbers || ''),
+    };
 
-    // ---- Resolve recipients ----
-    let recipients: { phone: string; name?: string }[] = [];
-
-    if (recipientType === 'persons') {
-      const packages = await db.getAllPackages();
-      const source = pkgId
-        ? packages.filter((p: any) => p.id === pkgId)
-        : packages;
-      recipients = source.flatMap((pkg: any) =>
-        (pkg.persons || [])
-          .filter((p: any) => p && p.phone)
-          .map((p: any) => ({ phone: p.phone, name: p.name || '' }))
-      );
-    } else {
-      const allSubs = await db.getAllSubscribers();
-
-      if (pkgId) {
-        recipients = allSubs.filter((s: any) => s.packageInterestId === pkgId);
-      } else if (targetFilter === 'All Subscribers') {
-        recipients = allSubs;
-      } else if (targetFilter === 'Package-specific') {
-        recipients = allSubs.filter((s: any) => Boolean(s.packageInterestId));
-      } else if (targetFilter === 'Manual Numbers') {
-        const phones = manualNumbers
-          .split(/[\n,;]+/)
-          .map((p) => p.trim())
-          .filter(Boolean);
-        recipients = phones.map((phone) => ({ phone }));
-      } else {
-        // Default: Active Opt-in
-        recipients = allSubs.filter((s: any) => s.optInStatus === true);
+    // ---- Optional schedule ----
+    // The admin sends an ISO timestamp WITH a timezone (e.g. 2026-10-18T13:40:00.000Z).
+    // A value without a timezone is rejected, because the server clock is not in the
+    // admin's timezone and the campaign would go out at the wrong time.
+    let scheduledFor: Date | null = null;
+    const scheduledRaw = req.body.scheduledDate ? String(req.body.scheduledDate).trim() : '';
+    if (scheduledRaw) {
+      const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(scheduledRaw);
+      const parsed = new Date(scheduledRaw);
+      if (!hasTimezone || Number.isNaN(parsed.getTime())) {
+        return fail(
+          res,
+          'Invalid scheduled date. Please refresh the admin page and try again.',
+          400
+        );
       }
+      // Anything within the next 30 seconds is simply sent now.
+      if (parsed.getTime() > Date.now() + 30_000) scheduledFor = parsed;
     }
 
+    const recipients = await resolveRecipients(params);
     if (recipients.length === 0) {
       return fail(res, 'No recipients matched the selected filter', 400);
     }
 
-    // ---- Send + log each ----
-    let sent = 0;
-    let failed = 0;
-    const errors: string[] = [];
-
-    for (const recipient of recipients) {
-      const result = await sendSingleSms(recipient.phone, message);
-      const status = result.success ? 'Sent' : 'Failed';
-
-      try {
-        await db.createSmsLog({
-          phone: recipient.phone,
-          message,
-          campaignName,
-          status,
-          errorMessage: result.error || null,
-        });
-      } catch (logErr) {
-        console.error('Failed to write sms_log:', logErr);
-      }
-
-      if (result.success) sent++;
-      else {
-        failed++;
-        if (errors.length < 5 && result.error) errors.push(result.error);
-      }
-
-      // Rate limit — 100ms between sends
-      await new Promise((r) => setTimeout(r, 100));
+    // ---- Scheduled: store it; the scheduler sends it at the right time ----
+    if (scheduledFor) {
+      const row = await scheduleCampaign(params, scheduledFor, recipients.length);
+      return send(
+        res,
+        {
+          scheduled: true,
+          id: row.id,
+          campaignName: params.campaignName,
+          scheduledFor: scheduledFor.toISOString(),
+          recipientType: params.recipientType,
+          targetFilter: params.targetFilter,
+          totalRecipients: recipients.length,
+        },
+        201
+      );
     }
 
-    if (sent + failed !== recipients.length) {
+    // ---- Immediate ----
+    const result = await dispatchCampaign(params, recipients);
+    if (result.sent + result.failed !== recipients.length) {
       throw new Error('SMS campaign result count does not match recipient count');
     }
 
     return send(res, {
-      campaignName,
-      recipientType,
-      targetFilter,
+      campaignName: params.campaignName,
+      recipientType: params.recipientType,
+      targetFilter: params.targetFilter,
       totalRecipients: recipients.length,
-      sent,
-      failed,
-      sampleErrors: errors,
+      sent: result.sent,
+      failed: result.failed,
+      sampleErrors: result.sampleErrors,
     });
   })
 );
@@ -1145,31 +1133,46 @@ apiRouter.get(
   asyncRoute(async (_req, res) => send(res, await db.getAllSmsLogs()))
 );
 
-// ---- GET /admin/sms/campaigns — Grouped campaign summaries ----
+// ---- GET /admin/sms/campaigns — Sent campaigns + upcoming scheduled ones ----
 apiRouter.get(
   '/admin/sms/campaigns',
   authenticateJWT,
   loadAdminContext,
   requirePermission('sms'),
   asyncRoute(async (_req, res) => {
+    await ensureScheduleTable();
     const result = await pool.query(`
-      SELECT
-        campaign_name AS name,
-        MIN(message) AS message,
-        COUNT(*)::int AS recipients_count,
-        MAX(sent_at) AS sent_date,
-        CASE
-          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0
-            AND COUNT(*) FILTER (WHERE status IN ('Sent', 'Delivered')) > 0 THEN 'Partial'
-          WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Failed'
-          WHEN COUNT(*) FILTER (WHERE status = 'Sent') > 0 THEN 'Sent'
-          WHEN COUNT(*) FILTER (WHERE status = 'Delivered') > 0 THEN 'Delivered'
-          ELSE 'Failed'
-        END AS status
-      FROM sms_logs
-      WHERE campaign_name IS NOT NULL AND campaign_name <> ''
-      GROUP BY campaign_name
-      ORDER BY MAX(sent_at) DESC
+      SELECT name, message, recipients_count, sent_date, status
+      FROM (
+        SELECT
+          campaign_name AS name,
+          MIN(message) AS message,
+          COUNT(*)::int AS recipients_count,
+          MAX(sent_at) AS sent_date,
+          CASE
+            WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0
+              AND COUNT(*) FILTER (WHERE status IN ('Sent', 'Delivered')) > 0 THEN 'Partial'
+            WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0 THEN 'Failed'
+            WHEN COUNT(*) FILTER (WHERE status = 'Sent') > 0 THEN 'Sent'
+            WHEN COUNT(*) FILTER (WHERE status = 'Delivered') > 0 THEN 'Delivered'
+            ELSE 'Failed'
+          END AS status
+        FROM sms_logs
+        WHERE campaign_name IS NOT NULL AND campaign_name <> ''
+        GROUP BY campaign_name
+
+        UNION ALL
+
+        SELECT
+          campaign_name AS name,
+          message,
+          COALESCE(estimated_recipients, 0) AS recipients_count,
+          scheduled_for AS sent_date,
+          'Scheduled' AS status
+        FROM sms_scheduled_campaigns
+        WHERE status = 'Scheduled'
+      ) AS all_campaigns
+      ORDER BY sent_date DESC
     `);
     return send(res, result.rows);
   })
@@ -1193,6 +1196,39 @@ apiRouter.get(
     return send(res, result.rows);
   })
 );
+
+// ---- DELETE /admin/sms/campaigns/:name/schedule — Cancel a scheduled campaign ----
+apiRouter.delete(
+  '/admin/sms/campaigns/:name/schedule',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('sms'),
+  asyncRoute(async (req, res) => {
+    const cancelled = await cancelScheduledCampaign(req.params.name);
+    if (cancelled === 0) {
+      return fail(res, 'No scheduled campaign with that name (it may have already started)', 404);
+    }
+    return send(res, { message: 'Scheduled campaign cancelled', cancelled });
+  })
+);
+
+// ---- /internal/sms/run-scheduled — Called by a cPanel cron job every minute ----
+// Keeps the server awake and sends any campaign whose time has arrived.
+// Protected by the SMS_CRON_KEY environment variable (sent in the x-cron-key header).
+apiRouter.all('/internal/sms/run-scheduled', (req: Request, res: Response) => {
+  const expected = process.env.SMS_CRON_KEY || '';
+  const provided = String(req.headers['x-cron-key'] || '');
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return fail(res, 'Forbidden', 403);
+  }
+  // Reply immediately; the sending continues in the background.
+  processDueCampaigns().catch((err) =>
+    console.error('[SMS] Cron run error:', err instanceof Error ? err.message : err)
+  );
+  return send(res, { started: true });
+});
 
 // ============================================================
 // DASHBOARD

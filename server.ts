@@ -6,6 +6,7 @@ import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import { apiRouter } from './src/backend/routes.js';
 import { openApiSpec } from './src/backend/swagger.js';
+import { startSmsScheduler } from './src/services/smsCampaignService.js';
 import { initExchangeRateService } from './src/services/exchangeRateService.js';
 import { initDatabase, testConnection } from './src/backend/database.js';
 import fs from 'fs';
@@ -31,6 +32,7 @@ async function startServer() {
 
   // Initialize Exchange Rate Service
   initExchangeRateService();
+  startSmsScheduler();
 
   // ============================================================
   // CORS
