@@ -400,6 +400,7 @@ async function createTables(client: PoolClient) {
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS persons JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS whatsapp_clicks INTEGER DEFAULT 0;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS status TEXT;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS departure_city TEXT DEFAULT 'Addis Ababa';
 
     ALTER TABLE gallery ADD COLUMN IF NOT EXISTS thumbnail_url TEXT DEFAULT '';
@@ -481,6 +482,7 @@ async function createTables(client: PoolClient) {
 
   await client.query(`
     UPDATE packages SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE packages SET status = CASE WHEN is_active = FALSE THEN 'Archived' ELSE 'Active' END WHERE status IS NULL;
     UPDATE gallery SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE faqs SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE social_links SET is_active = TRUE WHERE is_active IS NULL;
@@ -629,14 +631,23 @@ const packageFields = [
   'base_price_usd', 'base_price_etb', 'base_price_sar',
   'duration_days', 'departure_city',
   'inclusions', 'available_dates', 'itinerary', 'discounts', 'persons',
-  'image_url', 'is_active', 'whatsapp_clicks',
+  'image_url', 'is_active', 'status', 'whatsapp_clicks',
 ];
+
+const PACKAGE_STATUSES = ['Active', 'Inactive', 'Archived'];
+const resolvePackageStatus = (data: any): string => {
+  if (PACKAGE_STATUSES.includes(data?.status)) return data.status;
+  if (data?.isActive === false || data?.isActive === 'false') return 'Archived';
+  return 'Active';
+};
 
 const packageData = (data: any) =>
   Object.fromEntries(
     packageFields.map((field) => {
       const camel = field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
       let value = data[camel];
+      if (camel === 'status') value = resolvePackageStatus(data);
+      if (camel === 'isActive') value = resolvePackageStatus(data) === 'Active';
       if (['inclusions', 'availableDates', 'itinerary', 'discounts', 'persons'].includes(camel)) {
         value = JSON.stringify(value ?? []);
       }
@@ -677,6 +688,7 @@ export const dbOperations = {
   // ---------- PACKAGES ----------
   getAllPackages: list('packages'),
   getActivePackages: list('packages', 'created_at DESC', 'is_active = TRUE'),
+  getPublicPackages: list('packages', 'created_at DESC', "status IN ('Active', 'Inactive')"),
   findPackageById: find('packages'),
 
   async createPackage(data: any) {

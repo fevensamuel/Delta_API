@@ -618,19 +618,40 @@ const packageInput = (body: any, file?: Express.Multer.File) => ({
   itinerary: parse(body.itinerary),
   discounts: parse(body.discounts),
   persons: parse(body.persons),
-  imageUrl: file ? `/uploads/packages/${file.filename}` : body.imageUrl,
+    imageUrl: file ? `/uploads/packages/${file.filename}` : body.imageUrl,
+  status: ['Active', 'Inactive', 'Archived'].includes(body.status)
+    ? body.status
+    : bool(body.isActive, true)
+      ? 'Active'
+      : 'Archived',
   isActive: bool(body.isActive, true),
 });
+
+const toPublicPackage = (item: any, rate: number) => {
+  const { persons, ...rest } = item;
+  if (item.status === 'Inactive') {
+    return {
+      ...rest,
+      priceUsd: 0, priceEtb: 0, priceSar: 0,
+      priceUsdMin: null, priceUsdMax: null,
+      priceEtbMin: null, priceEtbMax: null,
+      priceSarMin: null, priceSarMax: null,
+      basePriceUsd: null, basePriceEtb: null, basePriceSar: null,
+      discounts: [],
+    };
+  }
+  return {
+    ...rest,
+    priceEtb: item.priceEtb || Math.round(item.priceUsd * rate),
+    priceSar: item.priceSar || Math.round(item.priceUsd * 3.75),
+  };
+};
 
 apiRouter.get(
   '/packages',
   asyncRoute(async (_req, res) => {
     const rate = (await getExchangeRate()).rate;
-    const data = (await db.getActivePackages()).map((item: any) => ({
-      ...item,
-      priceEtb: item.priceEtb || Math.round(item.priceUsd * rate),
-      priceSar: item.priceSar || Math.round(item.priceUsd * 3.75),
-    }));
+    const data = (await db.getPublicPackages()).map((item: any) => toPublicPackage(item, rate));
     return res.json({ status: 'success', success: true, count: data.length, data });
   })
 );
@@ -639,8 +660,9 @@ apiRouter.get(
   '/packages/:id',
   asyncRoute(async (req, res) => {
     const item = await db.findPackageById(req.params.id);
-    if (!item || !item.isActive) return fail(res, 'Package not found', 404);
-    return send(res, item);
+    if (!item || !['Active', 'Inactive'].includes(item.status)) return fail(res, 'Package not found', 404);
+    const rate = (await getExchangeRate()).rate;
+    return send(res, toPublicPackage(item, rate));
   })
 );
 

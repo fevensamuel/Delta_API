@@ -397,6 +397,7 @@ async function createTables(client) {
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS persons JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS whatsapp_clicks INTEGER DEFAULT 0;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE packages ADD COLUMN IF NOT EXISTS status TEXT;
     ALTER TABLE packages ADD COLUMN IF NOT EXISTS departure_city TEXT DEFAULT 'Addis Ababa';
 
     ALTER TABLE gallery ADD COLUMN IF NOT EXISTS thumbnail_url TEXT DEFAULT '';
@@ -476,6 +477,7 @@ async function createTables(client) {
   await client.query(`INSERT INTO contact_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
   await client.query(`
     UPDATE packages SET is_active = TRUE WHERE is_active IS NULL;
+    UPDATE packages SET status = CASE WHEN is_active = FALSE THEN 'Archived' ELSE 'Active' END WHERE status IS NULL;
     UPDATE gallery SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE faqs SET is_active = TRUE WHERE is_active IS NULL;
     UPDATE social_links SET is_active = TRUE WHERE is_active IS NULL;
@@ -608,12 +610,21 @@ var packageFields = [
   "persons",
   "image_url",
   "is_active",
+  "status",
   "whatsapp_clicks"
 ];
+var PACKAGE_STATUSES = ["Active", "Inactive", "Archived"];
+var resolvePackageStatus = (data) => {
+  if (PACKAGE_STATUSES.includes(data?.status)) return data.status;
+  if (data?.isActive === false || data?.isActive === "false") return "Archived";
+  return "Active";
+};
 var packageData = (data) => Object.fromEntries(
   packageFields.map((field) => {
     const camel = field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
     let value = data[camel];
+    if (camel === "status") value = resolvePackageStatus(data);
+    if (camel === "isActive") value = resolvePackageStatus(data) === "Active";
     if (["inclusions", "availableDates", "itinerary", "discounts", "persons"].includes(camel)) {
       value = JSON.stringify(value ?? []);
     }
@@ -637,6 +648,7 @@ var dbOperations = {
   // ---------- PACKAGES ----------
   getAllPackages: list("packages"),
   getActivePackages: list("packages", "created_at DESC", "is_active = TRUE"),
+  getPublicPackages: list("packages", "created_at DESC", "status IN ('Active', 'Inactive')"),
   findPackageById: find("packages"),
   async createPackage(data) {
     const values = packageData(data);
@@ -2318,17 +2330,40 @@ var packageInput = (body, file) => ({
   discounts: parse(body.discounts),
   persons: parse(body.persons),
   imageUrl: file ? `/uploads/packages/${file.filename}` : body.imageUrl,
+  status: ["Active", "Inactive", "Archived"].includes(body.status) ? body.status : bool(body.isActive, true) ? "Active" : "Archived",
   isActive: bool(body.isActive, true)
 });
+var toPublicPackage = (item, rate) => {
+  const { persons, ...rest } = item;
+  if (item.status === "Inactive") {
+    return {
+      ...rest,
+      priceUsd: 0,
+      priceEtb: 0,
+      priceSar: 0,
+      priceUsdMin: null,
+      priceUsdMax: null,
+      priceEtbMin: null,
+      priceEtbMax: null,
+      priceSarMin: null,
+      priceSarMax: null,
+      basePriceUsd: null,
+      basePriceEtb: null,
+      basePriceSar: null,
+      discounts: []
+    };
+  }
+  return {
+    ...rest,
+    priceEtb: item.priceEtb || Math.round(item.priceUsd * rate),
+    priceSar: item.priceSar || Math.round(item.priceUsd * 3.75)
+  };
+};
 apiRouter.get(
   "/packages",
   asyncRoute(async (_req, res) => {
     const rate = (await getExchangeRate()).rate;
-    const data = (await dbOperations.getActivePackages()).map((item) => ({
-      ...item,
-      priceEtb: item.priceEtb || Math.round(item.priceUsd * rate),
-      priceSar: item.priceSar || Math.round(item.priceUsd * 3.75)
-    }));
+    const data = (await dbOperations.getPublicPackages()).map((item) => toPublicPackage(item, rate));
     return res.json({ status: "success", success: true, count: data.length, data });
   })
 );
@@ -2336,8 +2371,9 @@ apiRouter.get(
   "/packages/:id",
   asyncRoute(async (req, res) => {
     const item = await dbOperations.findPackageById(req.params.id);
-    if (!item || !item.isActive) return fail(res, "Package not found", 404);
-    return send(res, item);
+    if (!item || !["Active", "Inactive"].includes(item.status)) return fail(res, "Package not found", 404);
+    const rate = (await getExchangeRate()).rate;
+    return send(res, toPublicPackage(item, rate));
   })
 );
 apiRouter.post(
