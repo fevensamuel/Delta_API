@@ -730,7 +730,27 @@ export const dbOperations = {
     return updated;
   },
 
+  async updatePackageStatus(entityId: string, status: 'Active' | 'Inactive' | 'Archived') {
+    return one(
+      await pool.query(
+        'UPDATE packages SET status = $1, is_active = $2, updated_at = NOW() WHERE id = $3 RETURNING *',
+        [status, status === 'Active', entityId]
+      )
+    );
+  },
+
   deletePackage: remove('packages'),
+
+  
+  // Changes only the status of a package (keeps is_active in sync).
+  async setPackageStatus(entityId: string, status: string) {
+    return one(
+      await pool.query(
+        `UPDATE packages SET status = $1, is_active = $2, updated_at = NOW() WHERE id = $3 RETURNING *`,
+        [status, status === 'Active', entityId]
+      )
+    );
+  },
 
   async incrementPackageWhatsappClicks(entityId: string) {
     return one(

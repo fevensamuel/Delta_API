@@ -566,6 +566,33 @@ export const openApiSpec = {
         responses: { 200: { description: 'Package deleted successfully' } }
       }
     },
+    '/admin/packages/{id}/status': {
+      patch: {
+        summary: 'Update package status',
+        tags: ['Admin Packages'],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['status'],
+                properties: {
+                  status: { type: 'string', enum: ['Active', 'Inactive', 'Archived'] }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: { description: 'Package status updated successfully' },
+          400: { description: 'Invalid package status' },
+          404: { description: 'Package not found' }
+        }
+      }
+    },
 
     // ============================================================
     // ADMIN GALLERY

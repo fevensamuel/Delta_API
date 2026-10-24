@@ -111,6 +111,7 @@ export interface TravelPackage {
   itinerary: ItineraryDay[];
   imageUrl: string;
   isActive: boolean;
+  status?: 'Active' | 'Inactive' | 'Archived';
   whatsappClicks: number;
   createdAt: string;
   updatedAt: string;

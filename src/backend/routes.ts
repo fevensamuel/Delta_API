@@ -736,6 +736,39 @@ apiRouter.put(
   })
 );
 
+//apiRouter.patch(
+  //'/admin/packages/:id/status',
+  //authenticateJWT,
+ // loadAdminContext,
+//  requirePermission('packages'),
+ // asyncRoute(async (req, res) => {
+ //   const status = req.body?.status;
+ //   if (status !== 'Active' && status !== 'Inactive' && status !== 'Archived') {
+  //    return fail(res, 'Invalid package status', 400);
+ //   }
+
+  //  const item = await db.updatePackageStatus(req.params.id, status);
+  //  if (!item) return fail(res, 'Package not found', 404);
+   // return send(res, item);
+ // })
+//);
+
+apiRouter.patch(
+  '/admin/packages/:id/status',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('packages'),
+  asyncRoute(async (req, res) => {
+    const status = req.body?.status;
+    if (!['Active', 'Inactive', 'Archived'].includes(status)) {
+      return fail(res, 'Status must be Active, Inactive or Archived', 400);
+    }
+    const item = await db.setPackageStatus(req.params.id, status);
+    if (!item) return fail(res, 'Package not found', 404);
+    return send(res, item);
+  })
+);
+
 apiRouter.delete(
   '/admin/packages/:id',
   authenticateJWT,

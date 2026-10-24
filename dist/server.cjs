@@ -677,7 +677,24 @@ var dbOperations = {
     }
     return updated;
   },
+  async updatePackageStatus(entityId, status) {
+    return one(
+      await pool.query(
+        "UPDATE packages SET status = $1, is_active = $2, updated_at = NOW() WHERE id = $3 RETURNING *",
+        [status, status === "Active", entityId]
+      )
+    );
+  },
   deletePackage: remove("packages"),
+  // Changes only the status of a package (keeps is_active in sync).
+  async setPackageStatus(entityId, status) {
+    return one(
+      await pool.query(
+        `UPDATE packages SET status = $1, is_active = $2, updated_at = NOW() WHERE id = $3 RETURNING *`,
+        [status, status === "Active", entityId]
+      )
+    );
+  },
   async incrementPackageWhatsappClicks(entityId) {
     return one(
       await pool.query(
@@ -2441,6 +2458,21 @@ apiRouter.put(
     return send(res, data);
   })
 );
+apiRouter.patch(
+  "/admin/packages/:id/status",
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission("packages"),
+  asyncRoute(async (req, res) => {
+    const status = req.body?.status;
+    if (!["Active", "Inactive", "Archived"].includes(status)) {
+      return fail(res, "Status must be Active, Inactive or Archived", 400);
+    }
+    const item = await dbOperations.setPackageStatus(req.params.id, status);
+    if (!item) return fail(res, "Package not found", 404);
+    return send(res, item);
+  })
+);
 apiRouter.delete(
   "/admin/packages/:id",
   authenticateJWT,
@@ -3803,6 +3835,33 @@ var openApiSpec = {
         security: [{ bearerAuth: [] }],
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: { 200: { description: "Package deleted successfully" } }
+      }
+    },
+    "/admin/packages/{id}/status": {
+      patch: {
+        summary: "Update package status",
+        tags: ["Admin Packages"],
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["status"],
+                properties: {
+                  status: { type: "string", enum: ["Active", "Inactive", "Archived"] }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: { description: "Package status updated successfully" },
+          400: { description: "Invalid package status" },
+          404: { description: "Package not found" }
+        }
       }
     },
     // ============================================================
