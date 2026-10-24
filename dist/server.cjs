@@ -616,7 +616,7 @@ var packageFields = [
 var PACKAGE_STATUSES = ["Active", "Inactive", "Archived"];
 var resolvePackageStatus = (data) => {
   if (PACKAGE_STATUSES.includes(data?.status)) return data.status;
-  if (data?.isActive === false || data?.isActive === "false") return "Archived";
+  if (data?.isActive === false || data?.isActive === "false") return "Inactive";
   return "Active";
 };
 var packageData = (data) => Object.fromEntries(
@@ -2330,7 +2330,7 @@ var packageInput = (body, file) => ({
   discounts: parse(body.discounts),
   persons: parse(body.persons),
   imageUrl: file ? `/uploads/packages/${file.filename}` : body.imageUrl,
-  status: ["Active", "Inactive", "Archived"].includes(body.status) ? body.status : bool(body.isActive, true) ? "Active" : "Archived",
+  status: ["Active", "Inactive", "Archived"].includes(body.status) ? body.status : bool(body.isActive, true) ? "Active" : "Inactive",
   isActive: bool(body.isActive, true)
 });
 var toPublicPackage = (item, rate) => {

@@ -637,7 +637,7 @@ const packageFields = [
 const PACKAGE_STATUSES = ['Active', 'Inactive', 'Archived'];
 const resolvePackageStatus = (data: any): string => {
   if (PACKAGE_STATUSES.includes(data?.status)) return data.status;
-  if (data?.isActive === false || data?.isActive === 'false') return 'Archived';
+  if (data?.isActive === false || data?.isActive === 'false') return 'Inactive';
   return 'Active';
 };
 

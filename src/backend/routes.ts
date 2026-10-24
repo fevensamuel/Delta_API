@@ -619,11 +619,11 @@ const packageInput = (body: any, file?: Express.Multer.File) => ({
   discounts: parse(body.discounts),
   persons: parse(body.persons),
     imageUrl: file ? `/uploads/packages/${file.filename}` : body.imageUrl,
-  status: ['Active', 'Inactive', 'Archived'].includes(body.status)
+    status: ['Active', 'Inactive', 'Archived'].includes(body.status)
     ? body.status
     : bool(body.isActive, true)
       ? 'Active'
-      : 'Archived',
+      : 'Inactive',
   isActive: bool(body.isActive, true),
 });
 
