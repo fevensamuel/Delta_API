@@ -1382,7 +1382,18 @@ export const dbOperations = {
       safe('SELECT COUNT(*)::int AS v FROM flight_inquiries'),
     ]);
 
+    // Newest gallery items first (shown in "Recent Gallery Uploads" on the dashboard)
+    let recentGalleryUploads: any[] = [];
+    try {
+      recentGalleryUploads = rows(
+        await pool.query('SELECT * FROM gallery ORDER BY created_at DESC LIMIT 4')
+      );
+    } catch (error) {
+      console.error('❌ Dashboard recent gallery query failed:', error);
+    }
+
     return {
+      recentGalleryUploads,
       totalPackages,
       activePackages,
       totalGalleryItems,

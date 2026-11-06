@@ -10,6 +10,9 @@ import {
   dispatchCampaign,
   scheduleCampaign,
   cancelScheduledCampaign,
+  getFailedRecipients,
+  getRunningResends,
+  startResendFailed,
   ensureScheduleTable,
   processDueCampaigns,
   type CampaignParams,
@@ -1197,12 +1200,13 @@ apiRouter.get(
   asyncRoute(async (_req, res) => {
     await ensureScheduleTable();
     const result = await pool.query(`
-      SELECT name, message, recipients_count, sent_date, status
+      SELECT name, message, recipients_count, failed_count, sent_date, status
       FROM (
         SELECT
           campaign_name AS name,
           MIN(message) AS message,
           COUNT(*)::int AS recipients_count,
+          COUNT(*) FILTER (WHERE status = 'Failed')::int AS failed_count,
           MAX(sent_at) AS sent_date,
           CASE
             WHEN COUNT(*) FILTER (WHERE status = 'Failed') > 0
@@ -1212,8 +1216,14 @@ apiRouter.get(
             WHEN COUNT(*) FILTER (WHERE status = 'Delivered') > 0 THEN 'Delivered'
             ELSE 'Failed'
           END AS status
-        FROM sms_logs
-        WHERE campaign_name IS NOT NULL AND campaign_name <> ''
+        FROM (
+          -- only the most recent attempt per number, so a successful resend replaces the failure
+          SELECT DISTINCT ON (campaign_name, phone)
+                 campaign_name, phone, message, status, sent_at
+            FROM sms_logs
+           WHERE campaign_name IS NOT NULL AND campaign_name <> ''
+           ORDER BY campaign_name, phone, sent_at DESC, id DESC
+        ) latest_attempts
         GROUP BY campaign_name
 
         UNION ALL
@@ -1222,6 +1232,7 @@ apiRouter.get(
           campaign_name AS name,
           message,
           COALESCE(estimated_recipients, 0) AS recipients_count,
+          0 AS failed_count,
           scheduled_for AS sent_date,
           'Scheduled' AS status
         FROM sms_scheduled_campaigns
@@ -1243,12 +1254,52 @@ apiRouter.get(
     const name = req.params.name;
     const result = await pool.query(
       `SELECT phone, status, error_message, sent_at
-       FROM sms_logs
-       WHERE campaign_name = $1
-       ORDER BY sent_at ASC`,
+         FROM (
+           SELECT DISTINCT ON (phone) phone, status, error_message, sent_at
+             FROM sms_logs
+            WHERE campaign_name = $1
+            ORDER BY phone, sent_at DESC, id DESC
+         ) latest
+        ORDER BY sent_at ASC`,
       [name]
     );
     return send(res, result.rows);
+  })
+);
+
+// ---- GET /admin/sms/failed — Numbers whose latest attempt failed ----
+apiRouter.get(
+  '/admin/sms/failed',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('sms'),
+  asyncRoute(async (req, res) => {
+    const campaign = req.query.campaign ? String(req.query.campaign) : undefined;
+    const items = await getFailedRecipients(campaign);
+    return send(res, { items, running: getRunningResends() });
+  })
+);
+
+// ---- POST /admin/sms/resend-failed — Resend to the failed numbers of one campaign ----
+// Body: { campaignName: string, phones?: string[] }  (phones = only these numbers)
+apiRouter.post(
+  '/admin/sms/resend-failed',
+  authenticateJWT,
+  loadAdminContext,
+  requirePermission('sms'),
+  asyncRoute(async (req, res) => {
+    const campaignName = String(req.body.campaignName || '').trim();
+    if (!campaignName) return fail(res, 'campaignName is required', 400);
+    const phones = Array.isArray(req.body.phones)
+      ? req.body.phones.map((p: unknown) => String(p))
+      : undefined;
+    try {
+      const { total } = await startResendFailed(campaignName, phones);
+      if (total === 0) return fail(res, 'No failed numbers to resend for this campaign', 404);
+      return send(res, { started: true, campaignName, total }, 202);
+    } catch (err) {
+      return fail(res, err instanceof Error ? err.message : 'Could not start resend', 409);
+    }
   })
 );
 

@@ -23,6 +23,7 @@ export interface DispatchResult {
   sent: number;
   failed: number;
   sampleErrors: string[];
+  stoppedReason?: string;
 }
 
 // ------------------------------------------------------------
@@ -107,41 +108,169 @@ export async function resolveRecipients(params: CampaignParams): Promise<Recipie
 // ------------------------------------------------------------
 // Send to every recipient and log each result
 // ------------------------------------------------------------
+// A reply like these means the SMS provider itself is refusing us (bad or exhausted
+// account, throttling, outage), not that one phone number is wrong.
+const PROVIDER_ERROR =
+  /status code (401|403|429|5\d\d)|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|socket hang up|timeout/i;
+const MAX_CONSECUTIVE_PROVIDER_ERRORS = 10;
+const PAUSE_BETWEEN_SENDS_MS = 200;
+
+async function logSms(
+  phone: string,
+  params: CampaignParams,
+  status: 'Sent' | 'Failed',
+  errorMessage: string | null
+) {
+  try {
+    await db.createSmsLog({
+      phone,
+      message: params.message,
+      campaignName: params.campaignName,
+      status,
+      errorMessage,
+    });
+  } catch (logErr) {
+    console.error('Failed to write sms_log:', logErr);
+  }
+}
+
 export async function dispatchCampaign(
   params: CampaignParams,
   recipients: Recipient[]
 ): Promise<DispatchResult> {
   let sent = 0;
   let failed = 0;
+  let providerErrorsInARow = 0;
+  let stoppedReason = '';
   const errors: string[] = [];
 
   for (const recipient of recipients) {
-    const result = await sendSingleSms(recipient.phone, params.message);
-    const status = result.success ? 'Sent' : 'Failed';
-
-    try {
-      await db.createSmsLog({
-        phone: recipient.phone,
-        message: params.message,
-        campaignName: params.campaignName,
-        status,
-        errorMessage: result.error || null,
-      });
-    } catch (logErr) {
-      console.error('Failed to write sms_log:', logErr);
+    // The provider keeps refusing us: do not hammer it. Record the rest as Failed
+    // so they show up in the "Failed Numbers" list and can be resent later.
+    if (stoppedReason) {
+      await logSms(recipient.phone, params, 'Failed', `Not sent: ${stoppedReason}`);
+      failed++;
+      continue;
     }
 
-    if (result.success) sent++;
-    else {
+    const result = await sendSingleSms(recipient.phone, params.message);
+    await logSms(recipient.phone, params, result.success ? 'Sent' : 'Failed', result.error || null);
+
+    if (result.success) {
+      sent++;
+      providerErrorsInARow = 0;
+    } else {
       failed++;
       if (errors.length < 5 && result.error) errors.push(result.error);
+      if (PROVIDER_ERROR.test(result.error || '')) {
+        providerErrorsInARow++;
+        if (providerErrorsInARow >= MAX_CONSECUTIVE_PROVIDER_ERRORS) {
+          stoppedReason = `campaign stopped after ${MAX_CONSECUTIVE_PROVIDER_ERRORS} provider errors in a row (last: ${result.error})`;
+          console.error(`[SMS] "${params.campaignName}" ${stoppedReason}`);
+        }
+      } else {
+        providerErrorsInARow = 0;
+      }
     }
 
-    // Rate limit — 100ms between sends
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, PAUSE_BETWEEN_SENDS_MS));
   }
 
-  return { total: recipients.length, sent, failed, sampleErrors: errors };
+  return { total: recipients.length, sent, failed, sampleErrors: errors, stoppedReason };
+}
+
+// ------------------------------------------------------------
+// Failed numbers + resend
+// ------------------------------------------------------------
+export interface FailedRecipient {
+  phone: string;
+  campaignName: string;
+  message: string;
+  error: string;
+  failedAt: string;
+}
+
+/**
+ * Numbers whose MOST RECENT attempt in a campaign failed. A number that failed and was
+ * later resent successfully is no longer listed.
+ */
+export async function getFailedRecipients(campaignName?: string): Promise<FailedRecipient[]> {
+  const result = await pool.query(
+    `SELECT phone, campaign_name, message, error_message, sent_at
+       FROM (
+         SELECT DISTINCT ON (campaign_name, phone)
+                phone, campaign_name, message, status, error_message, sent_at
+           FROM sms_logs
+          WHERE campaign_name IS NOT NULL AND campaign_name <> ''
+            AND ($1::text IS NULL OR campaign_name = $1)
+          ORDER BY campaign_name, phone, sent_at DESC, id DESC
+       ) latest
+      WHERE status = 'Failed'
+      ORDER BY sent_at DESC`,
+    [campaignName || null]
+  );
+  return result.rows.map((r: any) => ({
+    phone: r.phone,
+    campaignName: r.campaign_name,
+    message: r.message,
+    error: r.error_message || '',
+    failedAt: r.sent_at,
+  }));
+}
+
+const runningResends = new Set<string>();
+
+export const getRunningResends = (): string[] => Array.from(runningResends);
+
+/**
+ * Resends a campaign's message to the numbers that failed (or to a chosen subset of them).
+ * Runs in the background and returns at once, so a long resend cannot time out the request.
+ * Results are logged under the same campaign name, so the history and the failed list update.
+ */
+export async function startResendFailed(
+  campaignName: string,
+  phones?: string[]
+): Promise<{ total: number }> {
+  if (runningResends.has(campaignName)) {
+    throw new Error('A resend for this campaign is already running');
+  }
+
+  let failedList = await getFailedRecipients(campaignName);
+  if (phones && phones.length > 0) {
+    const wanted = new Set(phones);
+    failedList = failedList.filter((f) => wanted.has(f.phone));
+  }
+  if (failedList.length === 0) return { total: 0 };
+
+  const params: CampaignParams = {
+    campaignName,
+    message: failedList[0].message,
+    recipientType: 'subscribers',
+    targetFilter: 'Resend failed',
+    packageId: null,
+    manualNumbers: '',
+  };
+
+  runningResends.add(campaignName);
+  console.warn(`[SMS] Resend started: "${campaignName}" to ${failedList.length} failed number(s)`);
+
+  dispatchCampaign(
+    params,
+    failedList.map((f) => ({ phone: f.phone }))
+  )
+    .then((r) =>
+      console.warn(
+        `[SMS] Resend finished: "${campaignName}" sent=${r.sent} failed=${r.failed}${
+          r.stoppedReason ? ` (${r.stoppedReason})` : ''
+        }`
+      )
+    )
+    .catch((err) =>
+      console.error(`[SMS] Resend error for "${campaignName}":`, err instanceof Error ? err.message : err)
+    )
+    .finally(() => runningResends.delete(campaignName));
+
+  return { total: failedList.length };
 }
 
 // ------------------------------------------------------------
